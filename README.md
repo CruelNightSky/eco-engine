@@ -11,8 +11,8 @@ The project is written in Go (Golang), providing a powerful and efficient implem
 - Territory upgrades and bonuses
 - Load and unload any territory on the fly
 - Fast forward feature (Not yet implemented)
-- Can be embedded in a website, used with a web server, or embedded in a desktop application or CLI app
-- Communication over WebSocket or HTTP
+- Embeddable using FFI (Not yet implemented)
+- Or communicate over WebSocket or HTTP
 
 ## Usage
 Once eco engine is running, you can interact with it through WebSocket or HTTP POST/GET requests to simulate the guild economy. Refer to the documentation or examples provided in the project's repository for detailed instructions on how to communicate with the engine and utilize its features.
