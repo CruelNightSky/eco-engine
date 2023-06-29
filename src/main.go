@@ -166,16 +166,20 @@ func init() {
 }
 
 func main() {
+	var port string
 	if len(os.Args) < 2 {
-		log.Panicln("port not specified")
+		log.Println("port not specified using default 8080")
+		port = "8080"
+	} else {
+		port = os.Args[1]
 	}
-	var port = os.Args[1]
 
-	if port == "" {
-		log.Panicln("$PORT must be set")
-	}
+	// if port == "" {
+	//	log.Panicln("$PORT must be set")
+	// }
 
 	// start http server
+
 	http.HandleFunc("/init", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -252,10 +256,10 @@ func main() {
 			terrList[name] = t[name]
 		}
 
-		go getPathToHQ(t, hq)
+		getPathToHQCheapest(t, hq)
 
 		log.Println("initialised territories")
-		log.Println(t["Ahmsord"])
+		defer CalculateRouteToHQTax(t, hq)
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"code":200,"message":"initialised"}`))
@@ -292,9 +296,10 @@ func generateResorce(territories map[string]*table.Territory) {
 	// and if resource stored in the storage excees the capacity then the excess resource will be lost
 	// stoarge capacity is calculated like this
 	// cap = base cap * larger storage
-	log.Println(territories["Ahmsord"])
+
 	// emerald generation
 	for name, territory := range territories {
+
 		// calculate the resource production
 		var emeraldRate = float64(territory.Property.Bonuses.EmeraldRate)
 		var emeraldProduction = float64(territory.ResourceProduction.Emerald) * (1 + emeraldRate/100)
@@ -307,7 +312,7 @@ func generateResorce(territories map[string]*table.Territory) {
 		}
 
 		// if the storage is not full then generate the resource
-		// for hq
+
 		if float64(territory.Storage.Current.Emerald)+emeraldProduction <= emeraldStorage && !territory.Property.HQ {
 			currEms := float64((territories)[name].Storage.Current.Emerald)
 			currEms += emeraldProduction
@@ -337,72 +342,208 @@ func generateResorce(territories map[string]*table.Territory) {
 }
 
 func resourceTick(territories map[string]*table.Territory) {
-	// move
-	/*
-		for _, territory := range territories {
-			// dump the resource into next terr's transversing resource
-		}
-	*/
+
 }
 
-func getPathToHQ(territories map[string]*table.Territory, name string) {
+func getPathToHQCheapest(territories map[string]*table.Territory, HQ string) {
+	// name is the HQ territory name
 	// get path to hq using dijkstra, depending on the trading style
 	// fastest  int
 	// will find the shortest path while ccheapest will find the shortest path with the least GLOBAL tax
 	// if the territory is the hq then return empty array
 
 	// connected nodes (territory) can be found at territories[name].TradingRoutes
-
-	log.Println(territories[name].TradingRoutes)
-	var dist int64 = 1
-
-	log.Println("here")
-	var path []string
 	var graph = dijkstra.NewGraph()
 	var HQID int
 
 	// find the id of hq
 	for _, territory := range territories {
 		if territory.Property.HQ {
-			fmt.Println(territory.ID)
 			HQID = territory.ID
 			break
 		}
 	}
 
+	var vertexAdded = make(map[int]bool)
+
 	for name := range territories {
 		// Add logic to compute the shortest path to HQ using Dijkstra's algorithm
 		// add current node
-		graph.AddVertex(territories[name].ID)
+		if vertexAdded[territories[name].ID] {
+			log.Println("Vertex ID:", territories[name].ID, "already added")
+			continue
+		} else {
+			graph.AddVertex(territories[name].ID)
+			// log.Println("Added vertex ID:", territories[name].ID)
+		}
+	}
 
-		// add nearby nodes
-		for _, connection := range territories[name].TradingRoutes {
-			if territories[name].Property.TradingStyle == "Cheapest" {
-				connTerr := territories[connection]
-				graph.AddVertex(connTerr.ID)
-				dist = int64(territories[name].Property.Tax.Others)
-				graph.AddArc(territories[name].ID, connTerr.ID, dist)
-			} else {
-				dist = 1
+	// now add arc
+	for _, territory := range territories {
+
+		var currTerr = territory.ID
+		// log.Println("Current territory ID:", currTerr, " ", territory.Name)
+		for _, route := range territory.TradingRoutes {
+
+			var currConn = territories[route].ID
+
+			// log.Println("Connection ID", currConn, " ", route)
+
+			// distance is the tax value
+			var distance = float64(territories[route].Property.Tax.Others)
+			var err = graph.AddArc(currTerr, currConn, int64(distance))
+			if err != nil {
+				log.Println(err)
 			}
+
+		}
+	}
+
+	// get terr id
+	for _, territory := range territories {
+		if territory.Property.HQ {
+			continue
 		}
 
-		var RouteToHQRaw, err = graph.ShortestSafe(territories[name].ID, HQID)
+		var terrID = territory.ID
+		var pathToHQRaw, err = graph.ShortestSafe(terrID, HQID)
 		if err != nil {
 			log.Println(err)
 		}
-		log.Println(territories[name].ID)
-		log.Println(RouteToHQRaw)
 
-		for _, id := range RouteToHQRaw.Path {
-			for name := range territories {
-				if territories[name].ID == id {
-					path = append(path, name)
+		// Assign path to HQ to the territory
+		// Convert terr ID to terr name and store in pathToHQ
+		var pathList = pathToHQRaw.Path
+		var path = make([]string, len(pathList))
+		for i, id := range pathList {
+			for _, terr := range territories {
+				if terr.ID == id {
+					path[i] = terr.Name
+					break
 				}
 			}
 		}
-
-		territories[name].RouteToHQ = path
-
+		territory.RouteToHQ = path
+		log.Println(territory.Name, " ", path, " ", territory.RouteToHQ)
 	}
+}
+
+func getPathToHQFastest(territories map[string]*table.Territory, HQ string) {
+
+	log.Println(territories[HQ].TradingRoutes)
+	// var dist int64 = 1
+	// var path []string
+	var graph = dijkstra.NewGraph()
+	var HQID int
+
+	// find the id of hq
+	for _, territory := range territories {
+		if territory.Property.HQ {
+			// fmt.Println(territory.ID)
+			HQID = territory.ID
+			break
+		}
+	}
+
+	var vertexAdded = make(map[int]bool)
+
+	for name := range territories {
+		// Add logic to compute the shortest path to HQ using Dijkstra's algorithm
+		// add current node
+		if vertexAdded[territories[name].ID] {
+			log.Println("Vertex ID:", territories[name].ID, "already added")
+			continue
+		} else {
+			graph.AddVertex(territories[name].ID)
+			// log.Println("Added vertex ID:", territories[name].ID)
+		}
+	}
+
+	// now add arc
+	for _, territory := range territories {
+
+		var currTerr = territory.ID
+		// log.Println("Current territory ID:", currTerr, " ", territory.Name)
+		for _, route := range territory.TradingRoutes {
+
+			var currConn = territories[route].ID
+
+			// log.Println("Connection ID", currConn, " ", route)
+
+			// distance is always 1
+			var err = graph.AddArc(currTerr, currConn, 1)
+			if err != nil {
+				log.Println(err)
+			}
+
+		}
+	}
+
+	log.Println(HQID)
+
+	// get terr id
+	for _, territory := range territories {
+
+		if territory.Property.HQ {
+			continue
+		}
+
+		var terrID = territory.ID
+		var pathToHQRaw, err = graph.ShortestSafe(terrID, HQID)
+
+		if err != nil {
+			log.Println(err)
+		}
+
+		// assign path to hq to the territory
+		// convert terr id to terr name and store in pathToHQ
+		var pathList = pathToHQRaw.Path
+		var path = make([]string, len(pathList))
+		var counter = 0
+		for _, id := range pathList {
+			for _, terr := range territories {
+				if terr.ID == id {
+					path[counter] = terr.Name
+					counter += 1
+				}
+			}
+		}
+		counter = 0
+		territory.RouteToHQ = path
+		log.Println("Territory: ", territory)
+	}
+
+}
+
+func CalculateRouteToHQTax(territories map[string]*table.Territory, from string) float64 {
+	// the formular to calculate tax are as follows
+	// 1 - ((1 - terr1Tax) * (1 - terr2Tax) * (1 - terr3Tax) * ... * (1 - terrnTax))
+	// for example if there are 4 territories and the tax are as follows : 60 60 5 5
+	// the tax will be 1 - (0.40 * 0.40 * 0.95 * 0.95) = 0.8556 or 85.56%
+	var startingTerritory = *territories[from]
+	log.Println("Starting territory: ", startingTerritory.RouteToHQ)
+	var routeToHQ = startingTerritory.RouteToHQ
+
+	var taxList = []float64{}
+	log.Println(routeToHQ)
+	// iterate through the route to hq and get the tax of each territory
+	for _, territory := range routeToHQ {
+		log.Println("called : ", territory)
+		if territories[territory].Property.HQ {
+			continue
+		} else {
+			taxList = append(taxList, 1-(float64(territories[territory].Property.Tax.Others)/100))
+			log.Println("test", 1-(float64(territories[territory].Property.Tax.Others)/100))
+		}
+	}
+	log.Println(taxList)
+
+	// calculate the tax
+	for _, tax := range taxList {
+		startingTerritory.RouteTax *= tax
+	}
+
+	startingTerritory.RouteTax *= 100
+
+	return startingTerritory.RouteTax
 }
