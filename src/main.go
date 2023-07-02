@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/RyanCarrier/dijkstra"
+	"github.com/gookit/goutil/arrutil"
 )
 
 var (
@@ -402,8 +403,73 @@ func generateResorce(territories *map[string]*table.Territory) {
 	}
 }
 
-func resourceTick(territories *map[string]*table.Territory) {
+func CalculateTerritoryUsageCost(territories *map[string]*table.Territory) {
+	for _, territory := range *territories {
 
+		//ignore if the territory is not claimed
+		if !territory.Claim {
+			continue
+		}
+
+		var usage = table.TerritoryResource{
+			Emerald: 0,
+			Ore:     0,
+			Wood:    0,
+			Crop:    0,
+			Fish:    0,
+		}
+
+		var damage, attack, hp, defence int
+		damage = territory.Property.Upgrades.Damage
+		attack = territory.Property.Upgrades.Attack
+		hp = territory.Property.Upgrades.Health
+		defence = territory.Property.Upgrades.Defence
+
+		// calculate the upgrade usage cost of the territory
+		usage.Ore += upgrades.UpgradesCost.Damage.Value[damage]
+		usage.Crop += upgrades.UpgradesCost.Attack.Value[attack]
+		usage.Wood += upgrades.UpgradesCost.Health.Value[hp]
+		usage.Fish += upgrades.UpgradesCost.Defence.Value[defence]
+
+		// bonuses
+		var strongerMinions = territory.Property.Bonuses.StrongerMinions
+		var towerMultiAttacks = territory.Property.Bonuses.TowerMultiAttack
+		var aura = territory.Property.Bonuses.TowerAura
+		var volley = territory.Property.Bonuses.TowerVolley
+
+		var efficientResource = territory.Property.Bonuses.EfficientResource
+		var resourceRate = territory.Property.Bonuses.ResourceRate
+		var efficientEmerald = territory.Property.Bonuses.EfficientEmerald
+		var emeraldRate = territory.Property.Bonuses.EmeraldRate
+
+		var emStorage = territory.Property.Bonuses.LargerEmeraldStorage
+		var resStorage = territory.Property.Bonuses.LargerResourceStorage
+
+		usage.Ore += int(upgrades.Bonuses.StrongerMinions.Cost[volley] + upgrades.Bonuses.EfficientEmeralds.Cost[efficientEmerald])
+		usage.Crop += int(upgrades.Bonuses.TowerAura.Cost[aura] + upgrades.Bonuses.EmeraldsRate.Cost[emeraldRate])
+		usage.Wood += int(upgrades.Bonuses.StrongerMinions.Cost[towerMultiAttacks] + upgrades.Bonuses.LargerEmeraldsStorage.Cost[emStorage] + upgrades.Bonuses.StrongerMinions.Cost[strongerMinions])
+		usage.Fish += int(upgrades.Bonuses.TowerMultiAttacks.Cost[efficientResource])
+		usage.Emerald += int(upgrades.Bonuses.LargerResourceStorage.Cost[resStorage] + upgrades.Bonuses.ResourceRate.Cost[resourceRate] + upgrades.Bonuses.EfficientResource.Cost[efficientResource])
+
+		// set the usage cost of the territory
+		(*territory).TerritoryUsage = usage
+	}
+}
+
+func resourceTick(territories *map[string]*table.Territory) {
+	// move all resources and emeralds onto next terr's transversing to hq
+	// if the terr is hq then ignore
+	for _, territory := range *territories {
+		if territory.Property.HQ {
+			continue
+		}
+
+		// or if the terr is not claimed then do not move the storage into transversing res
+		// but if the unclaimed terr has transversing res then move it to the next terr's transversing res anyways
+
+		// we need to move res and emse from terrs closest to hq first using territory.RouteFromHQ
+
+	}
 }
 
 func getPathToHQCheapest(territories *map[string]*table.Territory, HQ string) {
@@ -485,7 +551,10 @@ func getPathToHQCheapest(territories *map[string]*table.Territory, HQ string) {
 			}
 		}
 		territory.RouteToHQ = path
-		log.Println(territory.Name, " ", path, " ", territory.RouteToHQ)
+		var reversePath = make([]string, len(path))
+		copy(reversePath, path)
+		arrutil.Reverse(reversePath)
+		territory.RouteFromHQ = reversePath
 	}
 }
 
@@ -570,7 +639,10 @@ func getPathToHQFastest(t *map[string]*table.Territory, HQ string) {
 		}
 		counter = 0
 		territory.RouteToHQ = path
-		log.Println("Territory: ", territory)
+		var reversePath = make([]string, len(path))
+		copy(reversePath, path)
+		arrutil.Reverse(reversePath)
+		territory.RouteFromHQ = reversePath
 	}
 }
 
