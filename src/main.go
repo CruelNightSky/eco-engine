@@ -256,10 +256,10 @@ func main() {
 			terrList[name] = t[name]
 		}
 
-		getPathToHQCheapest(t, hq)
+		getPathToHQCheapest(&t, hq)
 
 		log.Println("initialised territories")
-		defer CalculateRouteToHQTax(t, hq)
+		defer CalculateRouteToHQTax(&t, hq)
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"code":200,"message":"initialised"}`))
@@ -345,7 +345,7 @@ func resourceTick(territories map[string]*table.Territory) {
 
 }
 
-func getPathToHQCheapest(territories map[string]*table.Territory, HQ string) {
+func getPathToHQCheapest(territories *map[string]*table.Territory, HQ string) {
 	// name is the HQ territory name
 	// get path to hq using dijkstra, depending on the trading style
 	// fastest  int
@@ -357,7 +357,7 @@ func getPathToHQCheapest(territories map[string]*table.Territory, HQ string) {
 	var HQID int
 
 	// find the id of hq
-	for _, territory := range territories {
+	for _, territory := range *territories {
 		if territory.Property.HQ {
 			HQID = territory.ID
 			break
@@ -366,31 +366,31 @@ func getPathToHQCheapest(territories map[string]*table.Territory, HQ string) {
 
 	var vertexAdded = make(map[int]bool)
 
-	for name := range territories {
+	for name := range *territories {
 		// Add logic to compute the shortest path to HQ using Dijkstra's algorithm
 		// add current node
-		if vertexAdded[territories[name].ID] {
-			log.Println("Vertex ID:", territories[name].ID, "already added")
+		if vertexAdded[(*territories)[name].ID] {
+			log.Println("Vertex ID:", (*territories)[name].ID, "already added")
 			continue
 		} else {
-			graph.AddVertex(territories[name].ID)
+			graph.AddVertex((*territories)[name].ID)
 			// log.Println("Added vertex ID:", territories[name].ID)
 		}
 	}
 
 	// now add arc
-	for _, territory := range territories {
+	for _, territory := range *territories {
 
 		var currTerr = territory.ID
 		// log.Println("Current territory ID:", currTerr, " ", territory.Name)
 		for _, route := range territory.TradingRoutes {
 
-			var currConn = territories[route].ID
+			var currConn = (*territories)[route].ID
 
 			// log.Println("Connection ID", currConn, " ", route)
 
 			// distance is the tax value
-			var distance = float64(territories[route].Property.Tax.Others)
+			var distance = float64((*territories)[route].Property.Tax.Others)
 			var err = graph.AddArc(currTerr, currConn, int64(distance))
 			if err != nil {
 				log.Println(err)
@@ -400,7 +400,7 @@ func getPathToHQCheapest(territories map[string]*table.Territory, HQ string) {
 	}
 
 	// get terr id
-	for _, territory := range territories {
+	for _, territory := range *territories {
 		if territory.Property.HQ {
 			continue
 		}
@@ -416,7 +416,7 @@ func getPathToHQCheapest(territories map[string]*table.Territory, HQ string) {
 		var pathList = pathToHQRaw.Path
 		var path = make([]string, len(pathList))
 		for i, id := range pathList {
-			for _, terr := range territories {
+			for _, terr := range *territories {
 				if terr.ID == id {
 					path[i] = terr.Name
 					break
@@ -428,16 +428,15 @@ func getPathToHQCheapest(territories map[string]*table.Territory, HQ string) {
 	}
 }
 
-func getPathToHQFastest(territories map[string]*table.Territory, HQ string) {
+func getPathToHQFastest(t *map[string]*table.Territory, HQ string) {
 
-	log.Println(territories[HQ].TradingRoutes)
 	// var dist int64 = 1
 	// var path []string
 	var graph = dijkstra.NewGraph()
 	var HQID int
 
 	// find the id of hq
-	for _, territory := range territories {
+	for _, territory := range *t {
 		if territory.Property.HQ {
 			// fmt.Println(territory.ID)
 			HQID = territory.ID
@@ -447,26 +446,26 @@ func getPathToHQFastest(territories map[string]*table.Territory, HQ string) {
 
 	var vertexAdded = make(map[int]bool)
 
-	for name := range territories {
+	for name := range *t {
 		// Add logic to compute the shortest path to HQ using Dijkstra's algorithm
 		// add current node
-		if vertexAdded[territories[name].ID] {
-			log.Println("Vertex ID:", territories[name].ID, "already added")
+		if vertexAdded[(*t)[name].ID] {
+			log.Println("Vertex ID:", (*t)[name].ID, "already added")
 			continue
 		} else {
-			graph.AddVertex(territories[name].ID)
+			graph.AddVertex((*t)[name].ID)
 			// log.Println("Added vertex ID:", territories[name].ID)
 		}
 	}
 
 	// now add arc
-	for _, territory := range territories {
+	for _, territory := range *t {
 
 		var currTerr = territory.ID
 		// log.Println("Current territory ID:", currTerr, " ", territory.Name)
 		for _, route := range territory.TradingRoutes {
 
-			var currConn = territories[route].ID
+			var currConn = (*t)[route].ID
 
 			// log.Println("Connection ID", currConn, " ", route)
 
@@ -482,7 +481,7 @@ func getPathToHQFastest(territories map[string]*table.Territory, HQ string) {
 	log.Println(HQID)
 
 	// get terr id
-	for _, territory := range territories {
+	for _, territory := range *t {
 
 		if territory.Property.HQ {
 			continue
@@ -501,7 +500,7 @@ func getPathToHQFastest(territories map[string]*table.Territory, HQ string) {
 		var path = make([]string, len(pathList))
 		var counter = 0
 		for _, id := range pathList {
-			for _, terr := range territories {
+			for _, terr := range *t {
 				if terr.ID == id {
 					path[counter] = terr.Name
 					counter += 1
@@ -512,15 +511,14 @@ func getPathToHQFastest(territories map[string]*table.Territory, HQ string) {
 		territory.RouteToHQ = path
 		log.Println("Territory: ", territory)
 	}
-
 }
 
-func CalculateRouteToHQTax(territories map[string]*table.Territory, from string) float64 {
+func CalculateRouteToHQTax(territories *map[string]*table.Territory, from string) float64 {
 	// the formular to calculate tax are as follows
 	// 1 - ((1 - terr1Tax) * (1 - terr2Tax) * (1 - terr3Tax) * ... * (1 - terrnTax))
 	// for example if there are 4 territories and the tax are as follows : 60 60 5 5
 	// the tax will be 1 - (0.40 * 0.40 * 0.95 * 0.95) = 0.8556 or 85.56%
-	var startingTerritory = *territories[from]
+	var startingTerritory = (*territories)[from]
 	log.Println("Starting territory: ", startingTerritory.RouteToHQ)
 	var routeToHQ = startingTerritory.RouteToHQ
 
@@ -528,12 +526,12 @@ func CalculateRouteToHQTax(territories map[string]*table.Territory, from string)
 	log.Println(routeToHQ)
 	// iterate through the route to hq and get the tax of each territory
 	for _, territory := range routeToHQ {
-		log.Println("called : ", territory)
-		if territories[territory].Property.HQ {
+		log.Println("123called : ", territory)
+		if (*territories)[territory].Property.HQ {
 			continue
 		} else {
-			taxList = append(taxList, 1-(float64(territories[territory].Property.Tax.Others)/100))
-			log.Println("test", 1-(float64(territories[territory].Property.Tax.Others)/100))
+			taxList = append(taxList, 1-(float64((*territories)[territory].Property.Tax.Others)/100))
+			log.Println("test", 1-(float64((*territories)[territory].Property.Tax.Others)/100))
 		}
 	}
 	log.Println(taxList)
@@ -544,6 +542,7 @@ func CalculateRouteToHQTax(territories map[string]*table.Territory, from string)
 	}
 
 	startingTerritory.RouteTax *= 100
+	log.Println("Route tax from ", from, " to HQ is ", startingTerritory.RouteTax)
 
 	return startingTerritory.RouteTax
 }
