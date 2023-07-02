@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/RyanCarrier/dijkstra"
@@ -19,48 +21,9 @@ import (
 
 var (
 	t                 map[string]*table.Territory // loaded
-	ut                map[string]*table.Territory // unloaded
-	st                int                         // second tick
 	loadedTerritories = make(map[string]*table.Territory)
+	upgrades          *table.CostTable
 )
-
-// setInterval function to use later for resgen
-func setInterval(f func(map[string]*table.Territory), milliseconds int) chan bool {
-	ticker := time.NewTicker(time.Duration(milliseconds) * time.Millisecond)
-	done := make(chan bool)
-	go func() {
-		for {
-			select {
-			case <-ticker.C:
-				// run func to work on the data
-				f(t)
-			case <-done:
-				ticker.Stop()
-				return
-			}
-		}
-	}()
-	return done
-}
-
-func clearInterval(done chan bool) {
-	done <- true
-}
-
-func setTimeout(f func(args ...interface{}), ms int, args ...interface{}) chan bool {
-	ticker := time.NewTicker(time.Duration(ms) * time.Millisecond)
-	done := make(chan bool)
-	go func() {
-		select {
-		case <-ticker.C:
-			f(args...)
-		case <-done:
-			ticker.Stop()
-			return
-		}
-	}()
-	return done
-}
 
 func init() {
 	// load all upgrades data
@@ -68,8 +31,6 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-
-	var upgrades table.CostTable
 
 	err = json.Unmarshal(bytes, &upgrades)
 	if err != nil {
@@ -128,14 +89,14 @@ func init() {
 				HQ:           false,
 			},
 			Storage: table.TerritoryResourceStorage{
-				Capacity: table.TerritoryResource{
+				Capacity: table.TerritoryResourceStorageValue{
 					Emerald: 3000,
 					Ore:     300,
 					Wood:    300,
 					Fish:    300,
 					Crop:    300,
 				},
-				Current: table.TerritoryResource{
+				Current: table.TerritoryResourceStorageValue{
 					Emerald: 0,
 					Ore:     0,
 					Wood:    0,
@@ -193,7 +154,53 @@ func main() {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		/*
+					// accept websocket connection
+					c, err := websocket.Accept(w, r, nil)
+					if err != nil {
+						w.WriteHeader(http.StatusBadRequest)
+						w.Write([]byte(err.Error()))
+						os.Exit(1)
+						return
+					}
+					defer c.Close(websocket.StatusInternalError, "Internal Error")
 
+					ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+					defer cancel()
+
+					// read ws message
+					var v interface{}
+					err = wsjson.Read(ctx, c, &v)
+					if err != nil {
+						w.WriteHeader(http.StatusBadRequest)
+						w.Write([]byte(err.Error()))
+					}
+
+					// unmarshal message
+					var data struct {
+						Type      string `json:"type"`
+						Territory string
+						Data      struct {
+							Upgrades     table.TerritoryPropertyUpgradeData `json:"upgrades"`
+							Bonuses      table.TerritoryPropertyBonusesData `json:"bonuses"`
+							Tax          table.Tax                          `json:"tax"`
+							Border       string                             `json:"border"`
+							TradingStyle string                             `json:"tradingStyle"`
+							Claim        bool                               `json:"claimed"` // if true, ally cannot be true
+							Ally         bool                               `json:"ally"`
+							HQ           bool                               `json:"hq"` // if true, we have to recalculate PathToHQ and Tax for all territories
+						} `json:"data"`
+					}
+
+				json.Unmarshal(bytes, &data)
+
+
+			// if no territory provided
+			if data.Territory == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		*/
 		var territories struct {
 			Territories []string `json:"territories"`
 			HQ          string   `json:"hq"`
@@ -257,38 +264,40 @@ func main() {
 		}
 
 		getPathToHQCheapest(&t, hq)
+		defer CalculateRouteToHQTax(&t, hq)
 
 		log.Println("initialised territories")
-		defer CalculateRouteToHQTax(&t, hq)
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"code":200,"message":"initialised"}`))
+
+		startTimer(&t)
 	})
 
 	http.ListenAndServe(":"+port, nil)
 
-	// run generateResource every 1s and resTick every 60s
-	var done = make(chan struct{})
-	var secTicker = time.NewTicker(time.Second)
-	var minTicker = time.NewTicker(time.Minute)
-	go func(t map[string]*table.Territory) {
+}
+
+func startTimer(t *map[string]*table.Territory) {
+	// run generateResource every 1s and resTick every 60s using goroutine
+	go func(t *map[string]*table.Territory) {
+		var counter = 0
 		for {
-			select {
-			case <-secTicker.C:
-				generateResorce(t)
-				log.Println("tick")
-			case <-done:
-				secTicker.Stop()
-				minTicker.Stop()
-				return
+			time.Sleep(time.Second * 1)
+			generateResorce(t)
+			counter++
+			log.Println("tick")
+			// every 60s
+			if counter%60 == 0 {
+				resourceTick(t)
+				log.Println("resource tick")
+				counter = 0
 			}
 		}
 	}(t)
-
-	fmt.Printf("test")
 }
 
-func generateResorce(territories map[string]*table.Territory) {
+func generateResorce(territories *map[string]*table.Territory) {
 	// rate means how many seconds it takes to generate n resource
 	// n resource is calculated like this
 	// nres = base res prod * efficient resource
@@ -297,51 +306,103 @@ func generateResorce(territories map[string]*table.Territory) {
 	// stoarge capacity is calculated like this
 	// cap = base cap * larger storage
 
-	// emerald generation
-	for name, territory := range territories {
+	for _, territory := range *territories {
 
-		// calculate the resource production
-		var emeraldRate = float64(territory.Property.Bonuses.EmeraldRate)
-		var emeraldProduction = float64(territory.ResourceProduction.Emerald) * (1 + emeraldRate/100)
-		var emeraldStorage = float64(territory.Storage.Capacity.Emerald) * (1 + float64(territory.Property.Bonuses.LargerEmeraldStorage)/100)
+		// emerald generation
+		var baseEmeraldGeneration = (*territory).BaseResourceProduction.Emerald
+		var efficientEmerald = (*territory).Property.Bonuses.EfficientEmerald
+		var emeraldRate = (*territory).Property.Bonuses.EmeraldRate
 
-		// if the storage is full then do nothing
-		if float64(territory.Storage.Current.Emerald) >= emeraldStorage {
-			// send websocket message "A territory %s is producing more emeralds than it can store!"
-			continue
-		}
+		var emeraldMultiplier = float64(upgrades.Bonuses.EfficientEmeralds.Value[efficientEmerald]) * (4 / float64(upgrades.Bonuses.EmeraldsRate.Value[emeraldRate]))
 
-		// if the storage is not full then generate the resource
-
-		if float64(territory.Storage.Current.Emerald)+emeraldProduction <= emeraldStorage && !territory.Property.HQ {
-			currEms := float64((territories)[name].Storage.Current.Emerald)
-			currEms += emeraldProduction
-		} else if !territory.Property.HQ {
-			currEms := float64((territories)[name].Storage.Current.Emerald)
-			currEms += emeraldStorage
-		} else if float64(territory.Storage.Current.Emerald)+emeraldProduction <= emeraldStorage {
-
-			// normal terrs
-			currEms := float64((territories)[name].Storage.Current.Emerald)
-			currEms += emeraldProduction
+		var emeraldGenerationPerSec = (float64(baseEmeraldGeneration) * emeraldMultiplier) / 3600
+		var emeraldStorage = (*territory).Storage.Current.Emerald
+		// add the emerald to storage
+		if (*territory).Storage.Current.Emerald < (*territory).Storage.Capacity.Emerald {
+			(*territory).Storage.Current.Emerald += emeraldGenerationPerSec
 		} else {
-			currEms := float64((territories)[name].Storage.Current.Emerald)
-			currEms += emeraldStorage
+			(*territory).Storage.Current.Emerald = (*territory).Storage.Capacity.Emerald
 		}
-		fmt.Println(territories)
-	}
 
-	if st < 60 {
-		st++
-	} else {
-		for range territories {
-			resourceTick(territories)
+		// resource generation
+		// check what kind of territory is this first
+		var territoryType string
+
+		if (*territory).BaseResourceProduction.Crop != 0 {
+			territoryType = "Crop"
+		} else if (*territory).BaseResourceProduction.Wood != 0 {
+			territoryType = "Wood"
+		} else if (*territory).BaseResourceProduction.Ore != 0 {
+			territoryType = "Ore"
+		} else if (*territory).BaseResourceProduction.Fish != 0 {
+			territoryType = "Fish"
+		} else if (*territory).BaseResourceProduction.Fish != 0 && (*territory).BaseResourceProduction.Crop != 0 {
+
+			// gotta accomodate for that one stupid terr in ragni area
+			territoryType = "FishCrop"
 		}
-		st = 0
+
+		if territory.Name != "Maltic Plains" {
+
+			// get struct field by string
+			var baseResourceGeneration = reflect.ValueOf((*territory).BaseResourceProduction).FieldByName(territoryType).Int()
+			var efficientResource = (*territory).Property.Bonuses.EfficientResource
+			var resourceRate = (*territory).Property.Bonuses.ResourceRate
+
+			var resourceMultiplier = float64(upgrades.Bonuses.EfficientResource.Value[efficientResource]) * (4 / float64(upgrades.Bonuses.ResourceRate.Value[resourceRate]))
+			var resourceGenerationPerSec = (float64(baseResourceGeneration) * resourceMultiplier) / 3600
+
+			// add the resource to storage using runtime reflection since we dont know what kind of resource it is
+			var resourceStorage = reflect.ValueOf((*territory).Storage.Current).FieldByName(territoryType).Float()
+			var resourceStorageCapacity = reflect.ValueOf((*territory).Storage.Capacity).FieldByName(territoryType).Float()
+
+			// use reflection to set the value of the field
+			var v = reflect.ValueOf(&territory.Storage.Current).Elem()
+			var f = v.FieldByName(territoryType)
+			if f.IsValid() && f.CanSet() {
+				log.Println("setting field")
+				if resourceStorage < resourceStorageCapacity {
+					f.SetFloat(resourceStorage + float64(resourceGenerationPerSec))
+				} else {
+					f.SetFloat(resourceStorageCapacity)
+				}
+			} else {
+				_ = fmt.Errorf("field is not valid or cannot be set")
+			}
+			log.Println("Emerald Production :", efficientEmerald, emeraldRate, emeraldMultiplier, emeraldGenerationPerSec, "storage :", emeraldStorage)
+			log.Println("Resource Production :", efficientResource, resourceRate, resourceMultiplier, resourceGenerationPerSec, "storage :", resourceStorage, resourceStorageCapacity)
+
+		} else {
+
+			// for the maltic plains
+			var baseResourceGenerationCrop = (*territory).BaseResourceProduction.Crop
+			var baseResourceGenerationFish = (*territory).BaseResourceProduction.Fish
+
+			var efficientResource = (*territory).Property.Bonuses.EfficientResource
+			var resourceRate = (*territory).Property.Bonuses.ResourceRate
+
+			var resourceMultiplier = float64(upgrades.Bonuses.EfficientResource.Value[efficientResource]) * (4 / float64(upgrades.Bonuses.ResourceRate.Value[resourceRate]))
+			var resourceGenerationPerSecCrop = (float64(baseResourceGenerationCrop) * resourceMultiplier) / 3600
+			var resourceGenerationPerSecFish = (float64(baseResourceGenerationFish) * resourceMultiplier) / 3600
+
+			// for crops
+			if (*territory).Storage.Current.Crop <= (*territory).Storage.Capacity.Crop {
+				(*territory).Storage.Current.Crop += resourceGenerationPerSecCrop
+			} else {
+				(*territory).Storage.Current.Crop = (*territory).Storage.Capacity.Crop
+			}
+
+			// for fish
+			if (*territory).Storage.Current.Fish <= (*territory).Storage.Capacity.Fish {
+				(*territory).Storage.Current.Fish += resourceGenerationPerSecFish
+			} else {
+				(*territory).Storage.Current.Fish = (*territory).Storage.Capacity.Fish
+			}
+		}
 	}
 }
 
-func resourceTick(territories map[string]*table.Territory) {
+func resourceTick(territories *map[string]*table.Territory) {
 
 }
 
@@ -513,36 +574,53 @@ func getPathToHQFastest(t *map[string]*table.Territory, HQ string) {
 	}
 }
 
-func CalculateRouteToHQTax(territories *map[string]*table.Territory, from string) float64 {
-	// the formular to calculate tax are as follows
-	// 1 - ((1 - terr1Tax) * (1 - terr2Tax) * (1 - terr3Tax) * ... * (1 - terrnTax))
-	// for example if there are 4 territories and the tax are as follows : 60 60 5 5
-	// the tax will be 1 - (0.40 * 0.40 * 0.95 * 0.95) = 0.8556 or 85.56%
-	var startingTerritory = (*territories)[from]
-	log.Println("Starting territory: ", startingTerritory.RouteToHQ)
-	var routeToHQ = startingTerritory.RouteToHQ
-
-	var taxList = []float64{}
-	log.Println(routeToHQ)
-	// iterate through the route to hq and get the tax of each territory
-	for _, territory := range routeToHQ {
-		log.Println("123called : ", territory)
-		if (*territories)[territory].Property.HQ {
+func CalculateRouteToHQTax(territories *map[string]*table.Territory, HQ string) {
+	// Iterate through all territories and calculate the route tax to the HQ
+	for _, territory := range *territories {
+		// Skip the HQ territory
+		if territory.Property.HQ {
 			continue
-		} else {
-			taxList = append(taxList, 1-(float64((*territories)[territory].Property.Tax.Others)/100))
-			log.Println("test", 1-(float64((*territories)[territory].Property.Tax.Others)/100))
+		}
+
+		// Calculate the route to the HQ
+		routeToHQ := territory.RouteToHQ
+
+		// Initialize the taxList
+		taxList := []float64{}
+
+		// Iterate through the route to HQ and get the tax of each territory
+		for _, terr := range routeToHQ {
+			if (*territories)[terr].Property.HQ {
+				continue
+			}
+
+			if (*territories)[terr].Ally {
+
+				// Use ally tax instead of others tax
+				taxList = append(taxList, 1-float64((*territories)[terr].Property.Tax.Ally)/100)
+
+			} else if (*territories)[terr].Claim {
+
+				// if we claimed the territory, the tax should be 0
+				taxList = append(taxList, 1)
+
+			} else {
+
+				// Use others tax
+				taxList = append(taxList, 1-float64((*territories)[terr].Property.Tax.Others)/100)
+
+			}
+
+			// Calculate the route tax
+			routeTax := 1.0
+			for _, tax := range taxList {
+				routeTax *= tax
+			}
+
+			routeTax *= 100
+
+			// round it to 2 decimal places
+			territory.RouteTax = math.Round((100-routeTax)*100) / 100
 		}
 	}
-	log.Println(taxList)
-
-	// calculate the tax
-	for _, tax := range taxList {
-		startingTerritory.RouteTax *= tax
-	}
-
-	startingTerritory.RouteTax *= 100
-	log.Println("Route tax from ", from, " to HQ is ", startingTerritory.RouteTax)
-
-	return startingTerritory.RouteTax
 }
