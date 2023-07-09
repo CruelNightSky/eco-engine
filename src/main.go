@@ -878,7 +878,7 @@ func ResourceTickFromHQ(t *map[string]*table.Territory, HQ string) {
 
 	for _, territory := range *t {
 
-		if visited[territory.Name] || (*territory).Property.HQ {
+		if visited[territory.Name] {
 			continue
 		}
 
@@ -891,38 +891,47 @@ func ResourceTickFromHQ(t *map[string]*table.Territory, HQ string) {
 			// then remove the current transversing resource from territory to not cause memory leak
 
 			// if its the destination then move it onto the territory's storage
-			if route[0] == HQ {
-				
-				// remove the res from hq storage
-				// if not enough then only remove the amount that is available
-				if (*(*t)[HQ]).Storage.Current.Emerald < transversingResource.Emerald {
-					(*(*t)[HQ]).Storage.Current.Emerald	
+			for _, territoryRoute := range route {
+
+				// next terr is PathFromHQ[1]
+				if (*territory).Property.HQ {
+
+					if (*territory).Storage.Current.Emerald < transversingResource.Emerald ||
+						(*territory).Storage.Current.Ore < transversingResource.Ore ||
+						(*territory).Storage.Current.Wood < transversingResource.Wood ||
+						(*territory).Storage.Current.Crop < transversingResource.Crop ||
+						(*territory).Storage.Current.Fish < transversingResource.Fish {
+
+						// only push what we have
+						(*t)[territoryRoute].TransversingResourceFromHQ = append((*t)[territoryRoute].TransversingResourceFromHQ, table.TransveringResource{
+							Emerald:     math.Min((*t)[dest].TerritoryUsage.Emerald, (*territory).Storage.Current.Emerald),
+							Ore:         math.Min((*t)[dest].TerritoryUsage.Ore, (*territory).Storage.Current.Ore),
+							Wood:        math.Min((*t)[dest].TerritoryUsage.Wood, (*territory).Storage.Current.Wood),
+							Crop:        math.Min((*t)[dest].TerritoryUsage.Crop, (*territory).Storage.Current.Crop),
+							Fish:        math.Min((*t)[dest].TerritoryUsage.Fish, (*territory).Storage.Current.Fish),
+							Destination: dest,
+							RouteToDest: route,
+						})
+					}
+
+				} else if territoryRoute == dest {
+
+					// move onto real storage
+					(*t)[territoryRoute].Storage.Current.Emerald += transversingResource.Emerald
+					(*t)[territoryRoute].Storage.Current.Ore += transversingResource.Ore
+					(*t)[territoryRoute].Storage.Current.Wood += transversingResource.Wood
+					(*t)[territoryRoute].Storage.Current.Crop += transversingResource.Crop
+					(*t)[territoryRoute].Storage.Current.Fish += transversingResource.Fish
+
+				} else {
+
+					// move onto transversing resource
+					(*t)[territoryRoute].TransversingResourceFromHQ = append((*t)[territoryRoute].TransversingResourceFromHQ, transversingResource)
+
 				}
-			} else if route[1] == dest {
 
-				// move onto storage
-				(*(*t)[dest]).Storage.Current.Emerald += transversingResource.Emerald
-				(*(*t)[dest]).Storage.Current.Ore += transversingResource.Ore
-				(*(*t)[dest]).Storage.Current.Wood += transversingResource.Wood
-				(*(*t)[dest]).Storage.Current.Crop += transversingResource.Crop
-				(*(*t)[dest]).Storage.Current.Fish += transversingResource.Fish
-
-				// shift the array to the left to remove current terr
-				route = route[1:]
-				transversingResource.RouteToDest = route
-
-				// remove the current transversing resource index from current territory
-				(*t)[territory.Name].TransversingResourceFromHQ = append((*t)[territory.Name].TransversingResourceFromHQ[:0], (*t)[territory.Name].TransversingResourceFromHQ[1:]...)
-
-				// mark the territory as visited
-				visited[territory.Name] = true
-
-			} else {
-
-				// if not
-				(*(*t)[route[1]]).TransversingResourceFromHQ = append((*(*t)[route[1]]).TransversingResourceFromHQ, transversingResource)
-				visited[territory.Name] = true
-
+				// mark as visit
+				visited[territoryRoute] = true
 			}
 		}
 	}
