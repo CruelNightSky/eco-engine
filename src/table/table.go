@@ -41,23 +41,23 @@ type CostTable struct {
 			ResourceType string    `json:"resourceType"`
 			Value        []float64 `json:"value"`
 		} `json:"strongerMinions"`
-		TowerMultiAttacks struct {
+		TowerMultiAttack struct {
 			MaxLevel     int    `json:"maxLevel"`
 			Cost         []int  `json:"cost"`
 			ResourceType string `json:"resourceType"`
 			Value        []int  `json:"value"`
-		} `json:"towerMultiAttacks"`
+		} `json:"towerMultiAttack"`
 		TowerAura struct {
-			MaxLevel     int           `json:"maxLevel"`
-			Cost         []int         `json:"cost"`
-			ResourceType string        `json:"resourceType"`
-			Value        []interface{} `json:"value"`
+			MaxLevel     int    `json:"maxLevel"`
+			Cost         []int  `json:"cost"`
+			ResourceType string `json:"resourceType"`
+			Value        []int  `json:"value"`
 		} `json:"towerAura"`
 		TowerVolley struct {
-			MaxLevel     int           `json:"maxLevel"`
-			Cost         []int         `json:"cost"`
-			ResourceType string        `json:"resourceType"`
-			Value        []interface{} `json:"value"`
+			MaxLevel     int    `json:"maxLevel"`
+			Cost         []int  `json:"cost"`
+			ResourceType string `json:"resourceType"`
+			Value        []int  `json:"value"`
 		} `json:"towerVolley"`
 		XpSeeking struct {
 			MaxLevel     int    `json:"maxLevel"`
@@ -117,93 +117,123 @@ type CostTable struct {
 }
 
 type TerritoryProperty struct {
-	Upgrades     TerritoryPropertyUpgradeData
-	Bonuses      TerritoryPropertyBonusesData
-	Tax          Tax
-	Border       string
-	TradingStyle string
-	HQ           bool
+	TargetUpgrades  TerritoryPropertyUpgradeData `json:"targetUpgrades"`
+	TargetBonuses   TerritoryPropertyBonusesData `json:"targetBonuses"`
+	CurrentUpgrades TerritoryPropertyUpgradeData `json:"currentUpgrades"`
+	CurrentBonuses  TerritoryPropertyBonusesData `json:"currentBonuses"`
+	Tax             Tax                          `json:"tax"`
+	Border          string                       `json:"border"`
+	TradingStyle    string                       `json:"tradingStyle"`
+	HQ              bool                         `json:"hq"`
 }
 
 type TerritoryPropertyUpgradeData struct {
-	Damage  int
-	Attack  int
-	Health  int
-	Defence int
+	Damage  int `json:"damage"`
+	Attack  int `json:"attack"`
+	Health  int `json:"health"`
+	Defence int `json:"defence"`
 }
 
 type TerritoryPropertyBonusesData struct {
-	StrongerMinions       int
-	TowerMultiAttack      int
-	TowerAura             int
-	TowerVolley           int
-	LargerResourceStorage int
-	LargerEmeraldStorage  int
-	EfficientResource     int
-	EfficientEmerald      int
-	ResourceRate          int
-	EmeraldRate           int
+	StrongerMinions       int `json:"strongerMinions"`
+	TowerMultiAttack      int `json:"towerMultiAttacks"`
+	TowerAura             int `json:"towerAura"`
+	TowerVolley           int `json:"towerVolley"`
+	LargerResourceStorage int `json:"largerResourceStorage"`
+	LargerEmeraldStorage  int `json:"largerEmeraldsStorage"`
+	EfficientResource     int `json:"efficientResource"`
+	EfficientEmerald      int `json:"efficientEmeralds"`
+	ResourceRate          int `json:"resourceRate"`
+	EmeraldRate           int `json:"emeraldsRate"`
 }
 
 type Tax struct {
-	Ally   int
-	Others int
+	Ally   int `json:"ally"`
+	Others int `json:"others"`
 }
 
 type TerritoryResource struct {
-	Emerald int
-	Ore     int
-	Wood    int
-	Fish    int
-	Crop    int
+	Emerald float64 `json:"emeralds"`
+	Ore     float64 `json:"ore"`
+	Wood    float64 `json:"wood"`
+	Fish    float64 `json:"fish"`
+	Crop    float64 `json:"crop"`
 }
 
 type Territory struct {
-	Name                   string
-	BaseResourceProduction TerritoryResource
-	Property               TerritoryProperty
-	Storage                TerritoryResourceStorage
-	TransversingResource   TerritoryResource
-	ResourceProduction     TerritoryResource
-	TerritoryUsage         TerritoryResource
-	Type                   string
-	TradingRoutes          []string
-	RouteToHQ              []string
-	Claim                  bool
-	ID                     int
+	ID                         int    `json:"id"`
+	Name                       string `json:"name"`
+	Type                       string `json:"type"`
+	Level                      string `json:"level"`
+	RawLevel                   int
+	Claim                      bool                     `json:"claim"`
+	Ally                       bool                     `json:"ally"`
+	BaseResourceProduction     TerritoryResource        `json:"baseResourceProduction"`
+	ResourceProduction         TerritoryResource        `json:"resourceProduction"`
+	TerritoryUsage             TerritoryResource        `json:"territoryUsage"`
+	Property                   TerritoryProperty        `json:"property"`
+	Stats                      TowerStats               `json:"stats"`
+	Storage                    TerritoryResourceStorage `json:"storage"`
+	TransversingResourceToHQ   []TransveringResource    `json:"transversingResourceToHQ"`
+	TransversingResourceFromHQ []TransveringResource    `json:"transversingResourceFromHQ"`
+	TradingRoutes              []string                 `json:"tradingRoutes"`
+	RouteToHQ                  []string                 `json:"routeToHQ"`
+	RouteFromHQ                []string                 `json:"routeFromHQ"`
+	RouteTax                   float64                  `json:"routeTax"`
+}
+
+type TowerStats struct {
+	Health            uint64  `json:"health"`
+	Attack            float32 `json:"attack"`
+	Defence           float32 `json:"defence"`
+	StrongerMinions   int     `json:"strongerMinions"`
+	TowerMultiAttacks int     `json:"towerMultiAttacks"`
+	TowerAura         int     `json:"towerAura"`
+	TowerVolley       int     `json:"towerVolley"`
+	Damage            struct {
+		Min uint64 `json:"low"`
+		Max uint64 `json:"high"`
+	} `json:"damage"`
+}
+
+type TransveringResource struct {
+	Source      string   `json:"source"`
+	Destination string   `json:"destination"`
+	RouteToDest []string `json:"routeToDest"`
+	Emerald     float64  `json:"emeralds"`
+	Ore         float64  `json:"ore"`
+	Crop        float64  `json:"crop"`
+	Wood        float64  `json:"wood"`
+	Fish        float64  `json:"fish"`
 }
 
 type TerritoryResourceStorage struct {
-	Capacity struct {
-		Emerald int
-		Ore     int
-		Wood    int
-		Fish    int
-		Crop    int
-	}
-	Current struct {
-		Emerald int
-		Ore     int
-		Wood    int
-		Fish    int
-		Crop    int
-	}
+	Capacity TerritoryResourceStorageValue `json:"capacity"`
+	Current  TerritoryResourceStorageValue `json:"current"`
+}
+
+type TerritoryResourceStorageValue struct {
+	Emerald float64 `json:"emeralds"`
+	Wood    float64 `json:"wood"`
+	Ore     float64 `json:"ore"`
+	Fish    float64 `json:"fish"`
+	Crop    float64 `json:"crop"`
 }
 
 type RawTerritoryData struct {
-	Resources struct {
-		Emeralds int `json:"emeralds"`
-		Ore      int `json:"ore"`
-		Crops    int `json:"crops"`
-		Fish     int `json:"fish"`
-		Wood     int `json:"wood"`
-	} `json:"resources"`
-	TradingRoutes []string `json:"Trading Routes"`
 	Type          string
+	TradingRoutes []string `json:"Trading Routes"`
+	Resources     struct {
+		Emeralds float64 `json:"emeralds"`
+		Ore      float64 `json:"ore"`
+		Crops    float64 `json:"crops"`
+		Fish     float64 `json:"fish"`
+		Wood     float64 `json:"wood"`
+	} `json:"resources"`
 }
 
 type TerritoryUpdateData struct {
-	Property TerritoryProperty
+	Property TerritoryProperty `json:"territoryUpdateDataProperty"`
 }
 
 func (t *Territory) Set(d TerritoryUpdateData) *Territory {
@@ -211,33 +241,33 @@ func (t *Territory) Set(d TerritoryUpdateData) *Territory {
 	// Damage, Attack, Health and Defence must be between 0 and 11
 	// StrongerMinions 0 - 3, Tower MultiAttack 0 - 1, Tower Aura and Volley 0 - 3
 	// Larger Emerald and Resource storage 0 - 6, Efficient Resource 0 - 6, Efficient Emerald 0 - 3 and Resource and Emerald Rate 0 - 3
-	if d.Property.Upgrades.Damage < 0 || d.Property.Upgrades.Damage > 11 {
+	if d.Property.TargetUpgrades.Damage < 0 || d.Property.TargetUpgrades.Damage > 11 {
 		return t
-	} else if d.Property.Upgrades.Attack < 0 || d.Property.Upgrades.Attack > 11 {
+	} else if d.Property.TargetUpgrades.Attack < 0 || d.Property.TargetUpgrades.Attack > 11 {
 		return t
-	} else if d.Property.Upgrades.Health < 0 || d.Property.Upgrades.Health > 11 {
+	} else if d.Property.TargetUpgrades.Health < 0 || d.Property.TargetUpgrades.Health > 11 {
 		return t
-	} else if d.Property.Upgrades.Defence < 0 || d.Property.Upgrades.Defence > 11 {
+	} else if d.Property.TargetUpgrades.Defence < 0 || d.Property.TargetUpgrades.Defence > 11 {
 		return t
-	} else if d.Property.Bonuses.StrongerMinions < 0 || d.Property.Bonuses.StrongerMinions > 3 {
+	} else if d.Property.TargetBonuses.StrongerMinions < 0 || d.Property.TargetBonuses.StrongerMinions > 3 {
 		return t
-	} else if d.Property.Bonuses.TowerMultiAttack < 0 || d.Property.Bonuses.TowerMultiAttack > 1 {
+	} else if d.Property.TargetBonuses.TowerMultiAttack < 0 || d.Property.TargetBonuses.TowerMultiAttack > 1 {
 		return t
-	} else if d.Property.Bonuses.TowerAura < 0 || d.Property.Bonuses.TowerAura > 3 {
+	} else if d.Property.TargetBonuses.TowerAura < 0 || d.Property.TargetBonuses.TowerAura > 3 {
 		return t
-	} else if d.Property.Bonuses.TowerVolley < 0 || d.Property.Bonuses.TowerVolley > 3 {
+	} else if d.Property.TargetBonuses.TowerVolley < 0 || d.Property.TargetBonuses.TowerVolley > 3 {
 		return t
-	} else if d.Property.Bonuses.LargerResourceStorage < 0 || d.Property.Bonuses.LargerResourceStorage > 6 {
+	} else if d.Property.TargetBonuses.LargerResourceStorage < 0 || d.Property.TargetBonuses.LargerResourceStorage > 6 {
 		return t
-	} else if d.Property.Bonuses.LargerEmeraldStorage < 0 || d.Property.Bonuses.LargerEmeraldStorage > 6 {
+	} else if d.Property.TargetBonuses.LargerEmeraldStorage < 0 || d.Property.TargetBonuses.LargerEmeraldStorage > 6 {
 		return t
-	} else if d.Property.Bonuses.EfficientResource < 0 || d.Property.Bonuses.EfficientResource > 6 {
+	} else if d.Property.TargetBonuses.EfficientResource < 0 || d.Property.TargetBonuses.EfficientResource > 6 {
 		return t
-	} else if d.Property.Bonuses.EfficientEmerald < 0 || d.Property.Bonuses.EfficientEmerald > 3 {
+	} else if d.Property.TargetBonuses.EfficientEmerald < 0 || d.Property.TargetBonuses.EfficientEmerald > 3 {
 		return t
-	} else if d.Property.Bonuses.ResourceRate < 0 || d.Property.Bonuses.ResourceRate > 3 {
+	} else if d.Property.TargetBonuses.ResourceRate < 0 || d.Property.TargetBonuses.ResourceRate > 3 {
 		return t
-	} else if d.Property.Bonuses.EmeraldRate < 0 || d.Property.Bonuses.EmeraldRate > 3 {
+	} else if d.Property.TargetBonuses.EmeraldRate < 0 || d.Property.TargetBonuses.EmeraldRate > 3 {
 		return t
 	}
 
@@ -280,11 +310,6 @@ func (t *Territory) ToggleBorder() *Territory {
 	return t
 }
 
-func (t *Territory) UnsetHQ() *Territory {
-	t.Property.HQ = false
-	return t
-}
-
 func (t *Territory) SetAllyTax(n int) *Territory {
 	// tax has to be within 5 and 60
 	if n < 5 || n > 60 {
@@ -310,5 +335,35 @@ func (t *Territory) AddTradingRoute(r string) *Territory {
 
 func (t *Territory) SetHQ() *Territory {
 	t.Property.HQ = true
+
+	//hq have 5x storage capacity
+	t.Storage.Capacity.Emerald *= 5
+	t.Storage.Capacity.Ore *= 5
+	t.Storage.Capacity.Wood *= 5
+	t.Storage.Capacity.Fish *= 5
+	t.Storage.Capacity.Crop *= 5
+
+	return t
+}
+
+func (t *Territory) UnsetHQ() *Territory {
+	t.Property.HQ = false
+
+	// divide the storage by 5
+	t.Storage.Capacity.Emerald /= 5
+	t.Storage.Capacity.Ore /= 5
+	t.Storage.Capacity.Wood /= 5
+	t.Storage.Capacity.Fish /= 5
+	t.Storage.Capacity.Crop /= 5
+
+	return t
+}
+
+func (t *Territory) ToggleAlly() *Territory {
+	if t.Ally {
+		t.Ally = false
+	} else {
+		t.Ally = true
+	}
 	return t
 }
