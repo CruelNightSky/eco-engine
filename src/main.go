@@ -1,6 +1,5 @@
 // TODO
-// 1 HQ Storage is always 5x of normal storage
-// 2 Fix routh finding unction so it checks for existing node first before adding vertex
+// fix the goddamn transversing resource fr
 
 package main
 
@@ -14,11 +13,24 @@ import (
 	"net/http"
 	"os"
 	"reflect"
+	"runtime"
 	"time"
 
 	"github.com/RyanCarrier/dijkstra"
 	"github.com/gookit/goutil/arrutil"
 	"github.com/gorilla/websocket"
+)
+
+const (
+	VERSION = "0.0.1a"
+)
+
+const (
+	_ = iota
+	ore
+	crop
+	wood
+	fish
 )
 
 var (
@@ -27,56 +39,42 @@ var (
 	upgrades          *table.CostTable
 	initialised       = false
 	hq                string
-	zeroData          = table.TerritoryUpdateData{
-		Property: table.TerritoryProperty{
-			TargetUpgrades: table.TerritoryPropertyUpgradeData{
-				Damage:  11,
-				Attack:  11,
-				Health:  11,
-				Defence: 11,
+	/*
+		zeroData          = &table.TerritoryUpdateData{
+			Property: table.TerritoryProperty{
+				TargetUpgrades: table.TerritoryPropertyUpgradeData{
+					Damage:  0,
+					Attack:  0,
+					Health:  0,
+					Defence: 0,
+				},
+				TargetBonuses: table.TerritoryPropertyBonusesData{
+					StrongerMinions:       0,
+					TowerMultiAttack:      0,
+					TowerAura:             0,
+					TowerVolley:           0,
+					LargerResourceStorage: 0,
+					LargerEmeraldStorage:  0,
+					EfficientResource:     0,
+					EfficientEmerald:      0,
+					ResourceRate:          0,
+					EmeraldRate:           0,
+				},
+				Tax: table.Tax{
+					Ally:   5,
+					Others: 5,
+				},
+				Border:       "Open",
+				TradingStyle: "Cheapest",
+				HQ:           false,
 			},
-			TargetBonuses: table.TerritoryPropertyBonusesData{
-				StrongerMinions:       1,
-				TowerMultiAttack:      0,
-				TowerAura:             1,
-				TowerVolley:           1,
-				LargerResourceStorage: 0,
-				LargerEmeraldStorage:  0,
-				EfficientResource:     0,
-				EfficientEmerald:      0,
-				ResourceRate:          0,
-				EmeraldRate:           0,
-			},
-			CurrentUpgrades: table.TerritoryPropertyUpgradeData{
-				Damage:  0,
-				Attack:  0,
-				Health:  0,
-				Defence: 0,
-			},
-			CurrentBonuses: table.TerritoryPropertyBonusesData{
-				StrongerMinions:       0,
-				TowerMultiAttack:      0,
-				TowerAura:             0,
-				TowerVolley:           0,
-				LargerResourceStorage: 0,
-				LargerEmeraldStorage:  0,
-				EfficientResource:     0,
-				EfficientEmerald:      0,
-				ResourceRate:          0,
-				EmeraldRate:           0,
-			},
-			Tax: table.Tax{
-				Ally:   5,
-				Others: 5,
-			},
-			Border:       "Open",
-			TradingStyle: "Cheapest",
-			HQ:           false,
-		},
-	}
+		}
+	*/
 )
 
+
 func init() {
+
 	// load all upgrades data
 	var bytes, err = os.ReadFile("./upgrades.json")
 	if err != nil {
@@ -248,18 +246,25 @@ func main() {
 			return
 		}
 
-		for _, terr := range territories.Territories {
-			(t)[terr].Claim = true
-		}
-
 		for _, name := range territories.Territories {
 
 			// set all the territory properties to 0 or default
-			t[name].Set(zeroData).SetAllyTax(5).SetOthersTax(60).OpenBorder().Cheapest()
+			t[name].Storage.Capacity = table.TerritoryResourceStorageValue{
+				Emerald: 3000,
+				Ore:     300,
+				Wood:    300,
+				Fish:    300,
+				Crop:    300,
+			}
 			loadedTerritories[name] = t[name]
 			if name == hq {
+				log.Println(t[name].Storage.Capacity)
 				t[name].SetHQ()
 			}
+		}
+
+		for _, terr := range territories.Territories {
+			(t)[terr].Claim = true
 		}
 
 		var terrList = make(map[string]*table.Territory)
@@ -275,7 +280,44 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"code":200,"message":"initialised"}`))
 
+		log.Println("HQ Territory :", hq)
 		initialised = true
+
+		// for testing
+		t[hq].Set(table.TerritoryUpdateData{
+			Property: table.TerritoryProperty{
+				TargetUpgrades: table.TerritoryPropertyUpgradeData{
+					Damage:  11,
+					Attack:  11,
+					Defence: 11,
+					Health:  11,
+				},
+				TargetBonuses: table.TerritoryPropertyBonusesData{
+					LargerResourceStorage: 6,
+					LargerEmeraldStorage:  6,
+				},
+			},
+		})
+		t[hq].Storage.Current = table.TerritoryResourceStorageValue{
+			Emerald: 300000.0,
+			Ore:     120000.0,
+			Wood:    120000.0,
+			Fish:    120000.0,
+			Crop:    120000.0,
+		}
+
+		t["Ahmsord"].Set(table.TerritoryUpdateData{
+			Property: table.TerritoryProperty{
+				TargetUpgrades: table.TerritoryPropertyUpgradeData{
+					Damage:  6,
+					Attack:  6,
+					Defence: 6,
+					Health:  6,
+				},
+			},
+		})
+
+		t["Central Islands"].SetHQ()
 
 		startTimer(&t, hq)
 	})
@@ -302,7 +344,7 @@ func main() {
 		// send data to client every 1s using goroutine
 		go func() {
 			for {
-				time.Sleep(time.Second * 1)
+
 				data.Territories = make([]*table.Territory, 0)
 				for _, terr := range loadedTerritories {
 					data.Territories = append(data.Territories, terr)
@@ -315,6 +357,7 @@ func main() {
 				if err != nil {
 					log.Println(err)
 				}
+				time.Sleep(time.Second * 1)
 			}
 		}()
 	})
@@ -361,7 +404,7 @@ func main() {
 				loadedTerritories[name].Claim = true
 			} else if data.Method == "remove" {
 				// unload the territory, set all the territory properties to 0 or default, remove from loadedTerritories and mark as unclaimed
-				t[name].Set(zeroData).SetAllyTax(5).SetOthersTax(60).OpenBorder().Cheapest()
+				t[name].SetAllyTax(5).SetOthersTax(60).OpenBorder().Cheapest()
 				delete(loadedTerritories, name)
 				t[name].Claim = false
 			}
@@ -369,6 +412,33 @@ func main() {
 
 		GetPathToHQCheapest(&t, hq)
 		CalculateRouteToHQTax(&t, hq)
+
+	})
+
+	http.HandleFunc("/setArbitraryStorage", func(w http.ResponseWriter, r *http.Request) {
+		if !initialised {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":400,"message":"not initialised"}`))
+			return
+		}
+
+		// if not POST
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Write([]byte(`{"code":400,"message":"method not allowed"}`))
+			return
+		}
+
+		var requestData struct {
+			Territory string                              `json:"territory"`
+			Value     *table.TerritoryResourceStorageValue `json:"value"`
+		}
+		json.Unmarshal([]byte(r.FormValue("data")), &requestData)
+
+		t[requestData.Territory].SetArbitraryStorage(requestData.Value)
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"code":200,"message":"resource storage set"}`))
 
 	})
 
@@ -470,12 +540,14 @@ func startTimer(t *map[string]*table.Territory, HQ string) {
 			CalculateTowerStats(t, HQ)
 			CalculateTerritoryUsageCost(t)
 			CalculateTerritoryLevel(t)
+			SetStorageCapacity(t)
 
 			counter++
 			log.Println("tick")
 			log.Println("HQ", (*t)[HQ].Property, (*t)[HQ].Storage.Current)
+			log.Println("Ahmsord", (*t)["Ahmsord"].TerritoryUsage, (*t)["Ahmsord"].Storage.Current)
 			// every 60s
-			if counter%60 == 0 {
+			if counter%5 == 0 {
 				ResourceTick(t, HQ)
 				ResourceTickFromHQ(t, HQ)
 				RequestResourceFromHQ(t)
@@ -594,7 +666,7 @@ func UseResource(t *map[string]*table.Territory) {
 
 		// offload the calculation to another goroutine
 		go func(t *table.Territory) {
-			// log.Println("New goroutine started")
+			// log.Println("New goroutine started for terriotry: ", (*t).Name)
 
 			var towerDmgLevel = (*t).Property.TargetUpgrades.Damage
 			var towerAtkLevel = (*t).Property.TargetUpgrades.Attack
@@ -684,6 +756,27 @@ func UseResource(t *map[string]*table.Territory) {
 			}
 
 		}(territory)
+	}
+}
+
+func SetStorageCapacity(territories *map[string]*table.Territory) {
+	for _, territory := range *territories {
+		var largerResourceStorageLevel = (*territory).Property.CurrentBonuses.LargerResourceStorage
+		var largerEmeraldsStorageLevel = (*territory).Property.CurrentBonuses.LargerEmeraldStorage
+
+		if !(*territory).Property.HQ {
+			(*territory).Storage.Capacity.Emerald = float64(3000 * upgrades.Bonuses.LargerEmeraldsStorage.Value[largerEmeraldsStorageLevel])
+			(*territory).Storage.Capacity.Ore = float64(300 * upgrades.Bonuses.LargerResourceStorage.Value[largerResourceStorageLevel])
+			(*territory).Storage.Capacity.Crop = float64(300 * upgrades.Bonuses.LargerResourceStorage.Value[largerResourceStorageLevel])
+			(*territory).Storage.Capacity.Wood = float64(300 * upgrades.Bonuses.LargerResourceStorage.Value[largerResourceStorageLevel])
+			(*territory).Storage.Capacity.Fish = float64(300 * upgrades.Bonuses.LargerResourceStorage.Value[largerResourceStorageLevel])
+		} else {
+			(*territory).Storage.Capacity.Emerald = float64(5000 * upgrades.Bonuses.LargerEmeraldsStorage.Value[largerEmeraldsStorageLevel])
+			(*territory).Storage.Capacity.Ore = float64(1500 * upgrades.Bonuses.LargerResourceStorage.Value[largerResourceStorageLevel])
+			(*territory).Storage.Capacity.Crop = float64(1500 * upgrades.Bonuses.LargerResourceStorage.Value[largerResourceStorageLevel])
+			(*territory).Storage.Capacity.Wood = float64(1500 * upgrades.Bonuses.LargerResourceStorage.Value[largerResourceStorageLevel])
+			(*territory).Storage.Capacity.Fish = float64(1500 * upgrades.Bonuses.LargerResourceStorage.Value[largerResourceStorageLevel])
+		}
 	}
 }
 
@@ -845,11 +938,14 @@ func CalculateTerritoryUsageCost(territories *map[string]*table.Territory) {
 }
 
 func RequestResourceFromHQ(territories *map[string]*table.Territory) {
+
+	var HQ = (*territories)[hq]
+
 	for _, territory := range *territories {
+
 		// if HQ then ignore
-		var HQ *table.Territory
-		if territory.Property.HQ {
-			HQ = territory
+		if territory.Name == hq {
+			runtime.Breakpoint()
 			continue
 		}
 
@@ -859,15 +955,23 @@ func RequestResourceFromHQ(territories *map[string]*table.Territory) {
 		}
 
 		var resourceUsage = territory.TerritoryUsage
-		(*HQ).TransversingResourceFromHQ = append((*HQ).TransversingResourceFromHQ, table.TransveringResource{
-			Emerald:     math.Max(float64(resourceUsage.Emerald-(*territory).ResourceProduction.Emerald), 0),
-			Ore:         math.Max(float64(resourceUsage.Ore-(*territory).ResourceProduction.Ore), 0),
-			Wood:        math.Max(float64(resourceUsage.Wood-(*territory).ResourceProduction.Wood), 0),
-			Crop:        math.Max(float64(resourceUsage.Crop-(*territory).ResourceProduction.Crop), 0),
-			Fish:        math.Max(float64(resourceUsage.Fish-(*territory).ResourceProduction.Fish), 0),
-			Destination: (*territory).Name,
-			RouteToDest: (*territory).RouteFromHQ,
-		})
+
+		if resourceUsage.Emerald != 0 || resourceUsage.Ore != 0 || resourceUsage.Wood != 0 || resourceUsage.Crop != 0 || resourceUsage.Fish != 0 {
+
+			(*HQ).TransversingResourceFromHQ = append((*HQ).TransversingResourceFromHQ, table.TransveringResource{
+				Source:      (*territories)[hq].Name,
+				Emerald:     math.Max(float64(resourceUsage.Emerald-(*territory).ResourceProduction.Emerald), 0),
+				Ore:         math.Max(float64(resourceUsage.Ore-(*territory).ResourceProduction.Ore), 0),
+				Wood:        math.Max(float64(resourceUsage.Wood-(*territory).ResourceProduction.Wood), 0),
+				Crop:        math.Max(float64(resourceUsage.Crop-(*territory).ResourceProduction.Crop), 0),
+				Fish:        math.Max(float64(resourceUsage.Fish-(*territory).ResourceProduction.Fish), 0),
+				Destination: (*territory).Name,
+				RouteToDest: (*territory).RouteFromHQ,
+			})
+
+			log.Println((*HQ).TransversingResourceFromHQ)
+
+		}
 
 	}
 }
@@ -896,6 +1000,7 @@ func ResourceTickFromHQ(t *map[string]*table.Territory, HQ string) {
 				// next terr is PathFromHQ[1]
 				if (*territory).Property.HQ {
 
+					// problematic line
 					if (*territory).Storage.Current.Emerald < transversingResource.Emerald ||
 						(*territory).Storage.Current.Ore < transversingResource.Ore ||
 						(*territory).Storage.Current.Wood < transversingResource.Wood ||
@@ -914,6 +1019,13 @@ func ResourceTickFromHQ(t *map[string]*table.Territory, HQ string) {
 						})
 					}
 
+					// and set the current storage to 0
+					(*territory).Storage.Current.Emerald = 0
+					(*territory).Storage.Current.Ore = 0
+					(*territory).Storage.Current.Wood = 0
+					(*territory).Storage.Current.Crop = 0
+					(*territory).Storage.Current.Fish = 0
+
 				} else if territoryRoute == dest {
 
 					// move onto real storage
@@ -927,6 +1039,8 @@ func ResourceTickFromHQ(t *map[string]*table.Territory, HQ string) {
 
 					// move onto transversing resource
 					(*t)[territoryRoute].TransversingResourceFromHQ = append((*t)[territoryRoute].TransversingResourceFromHQ, transversingResource)
+
+					// TODO: remove from the current transversing queue
 
 				}
 
@@ -996,7 +1110,7 @@ func GetPathToHQCheapest(territories *map[string]*table.Territory, HQ string) {
 	// name is the HQ territory name
 	// get path to hq using dijkstra, depending on the trading style
 	// fastest  int
-	// will find the shortest path while ccheapest will find the shortest path with the least GLOBAL tax
+	// will find the shortest path while cheapest will find the shortest path with the least GLOBAL tax
 	// if the territory is the hq then return empty array
 
 	// connected nodes (territory) can be found at territories[name].TradingRoutes
@@ -1235,6 +1349,8 @@ func CalculateTerritoryLevel(territories *map[string]*table.Territory) {
 			terrDef += (*territory).Property.CurrentBonuses.TowerVolley + 3
 		}
 
+		(*territory).RawLevel = terrDef
+
 		// vlow = 0 - 5, low = 6 - 18, med = 19 - 30, high = 31 - 48, vhigh >= 49
 		switch {
 		case terrDef >= 0 && terrDef <= 5:
@@ -1257,3 +1373,30 @@ func CalculateTerritoryLevel(territories *map[string]*table.Territory) {
 
 	}
 }
+
+/*
+func checkForUpdate() {
+
+	// check for new version of eco-engine from github then verify the checksum
+	// if checksum isn't the same as current version, download the new version and execve() it
+	// if checksum is the same, continue with the current version
+
+	// get checksum of current version
+	var hasher = sha256.New()
+	var f, err = os.Open("./eco-engine")
+	if err != nil {
+		log.Println("Unable to check for updates:", err)
+		return
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(hasher, f); err != nil {
+		log.Println("Unable to check for updates:", err)
+		return
+	}
+
+	var currentChecksum = hex.EncodeToString(hasher.Sum(nil))
+
+
+}
+*/
