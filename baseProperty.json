@@ -715,7 +715,8 @@
       "wood": 0
     },
     "Trading Routes": [
-      "Canyon Upper North West"
+      "Canyon Upper North West",
+      "Aldorei's Arch"
     ]
   },
   "Gelibord Corrupted Farm": {
@@ -828,7 +829,8 @@
       "wood": 3600
     },
     "Trading Routes": [
-      "Canyon Waterfall North"
+      "Canyon Waterfall North",
+      "Canyon Lower South East"
     ]
   },
   "Ahmsord Outskirts": {
@@ -4875,7 +4877,8 @@
     },
     "Trading Routes": [
       "Lusuco",
-      "Tower of Ascension"
+      "Tower of Ascension",
+      "Nesaak Plains South West"
     ]
   },
   "Canyon Path South West": {
@@ -5346,7 +5349,8 @@
       "wood": 0
     },
     "Trading Routes": [
-      "Crater Descent"
+      "Crater Descent",
+      "Entrance to Rodoroc"
     ]
   },
   "Almuj City": {
