@@ -1,19 +1,16 @@
-// TODO
-// fix the goddamn transversing resource fr
-
 package main
 
 import (
+	"crypto/sha256"
+	cl "eco-engine/customlog"
 	"eco-engine/table"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"math"
 	"net/http"
 	"os"
 	"reflect"
-	"runtime"
 	"time"
 
 	"github.com/RyanCarrier/dijkstra"
@@ -25,15 +22,8 @@ const (
 	VERSION = "0.0.1a"
 )
 
-const (
-	_ = iota
-	ore
-	crop
-	wood
-	fish
-)
-
 var (
+	startTime         = time.Now()
 	t                 map[string]*table.Territory // loaded
 	loadedTerritories = make(map[string]*table.Territory)
 	upgrades          *table.CostTable
@@ -72,32 +62,41 @@ var (
 	*/
 )
 
-
 func init() {
 
+	var isDebug = os.Getenv("DEBUG")
+	if isDebug == "true" {
+		cl.SetDebug(true)
+	}
+
+	cl.Log("==== Eco Engine v0.0.1 (Debug build) ====")
+	cl.Log("")
 	// load all upgrades data
 	var bytes, err = os.ReadFile("./upgrades.json")
+	cl.Log("Loading upgrades data.")
 	if err != nil {
-		panic(err)
+		cl.Error("Failed to load upgrades data. :" + err.Error())
 	}
 
 	err = json.Unmarshal(bytes, &upgrades)
 	if err != nil {
-		panic(err)
+		cl.Error("Failed to deserialise upgrades data :" + err.Error())
 	}
 
 	var uninitTerritories map[string]table.RawTerritoryData
 	bytes, err = os.ReadFile("./baseProperty.json")
+	cl.Log("Loading base property data.")
 	if err != nil {
-		panic(err)
+		cl.Error("Failed to load base property data :" + err.Error())
 	}
 
 	err = json.Unmarshal(bytes, &uninitTerritories)
 	if err != nil {
-		panic(err)
+		cl.Error("Failed to deserialise base property data :" + err.Error())
 	}
 
 	// initialise territory
+	cl.Log("Loading territories.")
 	var territories = make(map[string]*table.Territory, len(uninitTerritories))
 	var counter = 0
 	for name, data := range uninitTerritories {
@@ -112,10 +111,10 @@ func init() {
 			},
 			Property: table.TerritoryProperty{
 				TargetUpgrades: table.TerritoryPropertyUpgradeData{
-					Damage:  0,
-					Attack:  0,
-					Health:  0,
-					Defence: 0,
+					Damage:  11,
+					Attack:  11,
+					Health:  11,
+					Defence: 11,
 				},
 				TargetBonuses: table.TerritoryPropertyBonusesData{
 					StrongerMinions:       0,
@@ -189,17 +188,20 @@ func init() {
 			ID:            counter,
 		}
 		counter++
+		cl.Debug("Loaded territory", name, "with ID", territories[name].ID)
 	}
 	t = territories
+	cl.Log("Loaded", len(t), "territories.")
 }
 
 func main() {
 	var port string
 	if len(os.Args) < 2 {
-		log.Println("port not specified using default 8080")
+		cl.Warn("No port specified in arguments. Using default port 8080.")
 		port = "8080"
 	} else {
 		port = os.Args[1]
+		cl.Log("Using port", port)
 	}
 
 	// if port == "" {
@@ -207,7 +209,7 @@ func main() {
 	// }
 
 	// start http server
-
+	cl.Log("Starting HTTP server.")
 	http.HandleFunc("/init", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -235,8 +237,7 @@ func main() {
 		}
 		json.Unmarshal(bytes, &territories)
 
-		log.Printf("Received %v", territories)
-		log.Println("initialising territories")
+		cl.Log("Initialising territories", territories.Territories, "with HQ", territories.HQ)
 
 		hq = territories.HQ
 
@@ -258,7 +259,7 @@ func main() {
 			}
 			loadedTerritories[name] = t[name]
 			if name == hq {
-				log.Println(t[name].Storage.Capacity)
+				cl.Debug("Setting HQ to", name)
 				t[name].SetHQ()
 			}
 		}
@@ -275,12 +276,11 @@ func main() {
 		GetPathToHQCheapest(&t, hq)
 		CalculateRouteToHQTax(&t, hq)
 
-		log.Println("initialised territories")
+		cl.Log("Initialised", len(terrList), "territories with HQ at", hq)
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"code":200,"message":"initialised"}`))
 
-		log.Println("HQ Territory :", hq)
 		initialised = true
 
 		// for testing
@@ -306,60 +306,73 @@ func main() {
 			Crop:    120000.0,
 		}
 
-		t["Ahmsord"].Set(table.TerritoryUpdateData{
-			Property: table.TerritoryProperty{
-				TargetUpgrades: table.TerritoryPropertyUpgradeData{
-					Damage:  6,
-					Attack:  6,
-					Defence: 6,
-					Health:  6,
+		/*
+			t["Ahmsord"].Set(table.TerritoryUpdateData{
+				Property: table.TerritoryProperty{
+					TargetUpgrades: table.TerritoryPropertyUpgradeData{
+						Damage:  6,
+						Attack:  6,
+						Defence: 6,
+						Health:  6,
+					},
 				},
-			},
-		})
+			})
 
-		t["Central Islands"].SetHQ()
+			t["Central Islands"].SetHQ()
+		*/
 
 		startTimer(&t, hq)
 	})
 
 	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		var upgrader = websocket.Upgrader{
+			ReadBufferSize:   1024,
+			WriteBufferSize:  1024,
+			HandshakeTimeout: 5 * time.Second,
+		}
 
-		// upgrade connection to websocket
-		var upgrader = websocket.Upgrader{}
-		c, err := upgrader.Upgrade(w, r, nil)
+		upgrader.CheckOrigin = func(r *http.Request) bool { return true }
+
+		ws, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
+			cl.Error("Failed to upgrade connection to websocket: ", err.Error())
+			w.WriteHeader(http.StatusUpgradeRequired)
+			w.Write([]byte(`{"code":426,"message":"upgrade required"}`))
 			return
 		}
 
-		// close connection when function returns
-		defer c.Close()
+		cl.Log("New websocket connection.")
 
-		// we will only send messages to the client
-		var data struct {
-			Territories []*table.Territory `json:"territories"`
-		}
+		// send ws message every 1s
+		go func(ws *websocket.Conn) {
 
-		// send data to client every 1s using goroutine
-		go func() {
-			for {
-
-				data.Territories = make([]*table.Territory, 0)
-				for _, terr := range loadedTerritories {
-					data.Territories = append(data.Territories, terr)
-				}
-				bytes, err := json.Marshal(data)
-				if err != nil {
-					log.Println(err)
-				}
-				err = c.WriteMessage(websocket.TextMessage, bytes)
-				if err != nil {
-					log.Println(err)
-				}
-				time.Sleep(time.Second * 1)
+			type WSdata struct {
+				Territories map[string]*table.Territory `json:"territories"`
+				HQ          string                      `json:"hq"`
+				StartTime   time.Time                   `json:"startTime"`
+				Elapsed     time.Duration               `json:"elapsed"`
 			}
-		}()
+
+			var WSData = WSdata{
+				Territories: t,
+				HQ:          hq,
+				StartTime:   startTime,
+				Elapsed:     time.Since(startTime),
+			}
+
+			var d, err = json.Marshal(WSData)
+			if err != nil {
+				cl.Error("Failed to serialise data : ", err.Error())
+			}
+
+			err = ws.WriteJSON(d)
+			if err != nil {
+				cl.Warn("Failed to send message to client : ", err.Error())
+			}
+			cl.Debug("WebSocket message sent.")
+			time.Sleep(1 * time.Second)
+		}(ws)
+
 	})
 
 	http.HandleFunc("/modifyTerritory", func(w http.ResponseWriter, r *http.Request) {
@@ -430,7 +443,7 @@ func main() {
 		}
 
 		var requestData struct {
-			Territory string                              `json:"territory"`
+			Territory string                               `json:"territory"`
 			Value     *table.TerritoryResourceStorageValue `json:"value"`
 		}
 		json.Unmarshal([]byte(r.FormValue("data")), &requestData)
@@ -524,7 +537,10 @@ func main() {
 		}
 	})
 
-	http.ListenAndServe(":"+port, nil)
+	err := http.ListenAndServe(":"+port, nil)
+	if err != nil {
+		cl.Error("Error starting server : ", err.Error())
+	}
 
 }
 
@@ -543,15 +559,15 @@ func startTimer(t *map[string]*table.Territory, HQ string) {
 			SetStorageCapacity(t)
 
 			counter++
-			log.Println("tick")
-			log.Println("HQ", (*t)[HQ].Property, (*t)[HQ].Storage.Current)
-			log.Println("Ahmsord", (*t)["Ahmsord"].TerritoryUsage, (*t)["Ahmsord"].Storage.Current)
+			cl.Debug("Tick", counter)
+			cl.Debug("HQ", (*t)[HQ].Property, (*t)[HQ].Storage.Current)
+			cl.Debug("Ahmsord", (*t)["Ahmsord"].TerritoryUsage, (*t)["Ahmsord"].Storage.Current)
 			// every 60s
 			if counter%5 == 0 {
 				ResourceTick(t, HQ)
 				ResourceTickFromHQ(t, HQ)
 				RequestResourceFromHQ(t)
-				log.Println("resource tick")
+				cl.Debug("Tock")
 				counter = 0
 			}
 		}
@@ -661,7 +677,7 @@ func CalculateTowerStats(t *map[string]*table.Territory, HQ string) {
 
 func UseResource(t *map[string]*table.Territory) {
 
-	log.Println("UseResource()")
+	cl.Debug("Called")
 	for _, territory := range *t {
 
 		// offload the calculation to another goroutine
@@ -851,7 +867,7 @@ func GenerateResorce(territories *map[string]*table.Territory) {
 					f.SetFloat(resourceStorageCapacity)
 				}
 			} else {
-				_ = fmt.Errorf("field is not valid or cannot be set for %s", territory.Name)
+				cl.Error("Field is not valid or cannot be set")
 			}
 		} else {
 
@@ -934,175 +950,20 @@ func CalculateTerritoryUsageCost(territories *map[string]*table.Territory) {
 
 		// set the usage cost of the territory
 		(*territory).TerritoryUsage = usage
+		cl.Debug("Usage for", (territory.Name), (*territory).TerritoryUsage)
 	}
 }
 
 func RequestResourceFromHQ(territories *map[string]*table.Territory) {
 
-	var HQ = (*territories)[hq]
-
-	for _, territory := range *territories {
-
-		// if HQ then ignore
-		if territory.Name == hq {
-			runtime.Breakpoint()
-			continue
-		}
-
-		// if the territory is not claimed then ignore
-		if !territory.Claim {
-			continue
-		}
-
-		var resourceUsage = territory.TerritoryUsage
-
-		if resourceUsage.Emerald != 0 || resourceUsage.Ore != 0 || resourceUsage.Wood != 0 || resourceUsage.Crop != 0 || resourceUsage.Fish != 0 {
-
-			(*HQ).TransversingResourceFromHQ = append((*HQ).TransversingResourceFromHQ, table.TransveringResource{
-				Source:      (*territories)[hq].Name,
-				Emerald:     math.Max(float64(resourceUsage.Emerald-(*territory).ResourceProduction.Emerald), 0),
-				Ore:         math.Max(float64(resourceUsage.Ore-(*territory).ResourceProduction.Ore), 0),
-				Wood:        math.Max(float64(resourceUsage.Wood-(*territory).ResourceProduction.Wood), 0),
-				Crop:        math.Max(float64(resourceUsage.Crop-(*territory).ResourceProduction.Crop), 0),
-				Fish:        math.Max(float64(resourceUsage.Fish-(*territory).ResourceProduction.Fish), 0),
-				Destination: (*territory).Name,
-				RouteToDest: (*territory).RouteFromHQ,
-			})
-
-			log.Println((*HQ).TransversingResourceFromHQ)
-
-		}
-
-	}
 }
 
 func ResourceTickFromHQ(t *map[string]*table.Territory, HQ string) {
 
-	var visited = make(map[string]bool)
-
-	for _, territory := range *t {
-
-		if visited[territory.Name] {
-			continue
-		}
-
-		for _, transversingResource := range (*territory).TransversingResourceFromHQ {
-			var dest = transversingResource.Destination
-			var route = transversingResource.RouteToDest
-
-			// move the transversing resource to the next territory's transversing resource
-			// if the territory is the destination then move it onto the territory's storage
-			// then remove the current transversing resource from territory to not cause memory leak
-
-			// if its the destination then move it onto the territory's storage
-			for _, territoryRoute := range route {
-
-				// next terr is PathFromHQ[1]
-				if (*territory).Property.HQ {
-
-					// problematic line
-					if (*territory).Storage.Current.Emerald < transversingResource.Emerald ||
-						(*territory).Storage.Current.Ore < transversingResource.Ore ||
-						(*territory).Storage.Current.Wood < transversingResource.Wood ||
-						(*territory).Storage.Current.Crop < transversingResource.Crop ||
-						(*territory).Storage.Current.Fish < transversingResource.Fish {
-
-						// only push what we have
-						(*t)[territoryRoute].TransversingResourceFromHQ = append((*t)[territoryRoute].TransversingResourceFromHQ, table.TransveringResource{
-							Emerald:     math.Min((*t)[dest].TerritoryUsage.Emerald, (*territory).Storage.Current.Emerald),
-							Ore:         math.Min((*t)[dest].TerritoryUsage.Ore, (*territory).Storage.Current.Ore),
-							Wood:        math.Min((*t)[dest].TerritoryUsage.Wood, (*territory).Storage.Current.Wood),
-							Crop:        math.Min((*t)[dest].TerritoryUsage.Crop, (*territory).Storage.Current.Crop),
-							Fish:        math.Min((*t)[dest].TerritoryUsage.Fish, (*territory).Storage.Current.Fish),
-							Destination: dest,
-							RouteToDest: route,
-						})
-					}
-
-					// and set the current storage to 0
-					(*territory).Storage.Current.Emerald = 0
-					(*territory).Storage.Current.Ore = 0
-					(*territory).Storage.Current.Wood = 0
-					(*territory).Storage.Current.Crop = 0
-					(*territory).Storage.Current.Fish = 0
-
-				} else if territoryRoute == dest {
-
-					// move onto real storage
-					(*t)[territoryRoute].Storage.Current.Emerald += transversingResource.Emerald
-					(*t)[territoryRoute].Storage.Current.Ore += transversingResource.Ore
-					(*t)[territoryRoute].Storage.Current.Wood += transversingResource.Wood
-					(*t)[territoryRoute].Storage.Current.Crop += transversingResource.Crop
-					(*t)[territoryRoute].Storage.Current.Fish += transversingResource.Fish
-
-				} else {
-
-					// move onto transversing resource
-					(*t)[territoryRoute].TransversingResourceFromHQ = append((*t)[territoryRoute].TransversingResourceFromHQ, transversingResource)
-
-					// TODO: remove from the current transversing queue
-
-				}
-
-				// mark as visit
-				visited[territoryRoute] = true
-			}
-		}
-	}
 }
 
 func ResourceTick(territories *map[string]*table.Territory, HQ string) {
 
-	var visited = make(map[string]bool)
-
-	for _, t := range *territories {
-		if visited[(*t).Name] || (*t).Name == HQ {
-			continue
-		}
-
-		// just follow the calculated path
-		// if the next terr is hq, then add the resources to the hq
-		// else add the resources to the next terr's transversing resource
-		for _, transversingResource := range (*t).TransversingResourceToHQ {
-			var dest = transversingResource.Destination
-			var route = transversingResource.RouteToDest
-
-			if route[1] == dest {
-
-				// move onto real storage
-				(*territories)[route[1]].Storage.Current.Emerald += transversingResource.Emerald
-				(*territories)[route[1]].Storage.Current.Ore += transversingResource.Ore
-				(*territories)[route[1]].Storage.Current.Crop += transversingResource.Crop
-				(*territories)[route[1]].Storage.Current.Wood += transversingResource.Wood
-				(*territories)[route[1]].Storage.Current.Fish += transversingResource.Fish
-
-				// shift the array to the left to remove current terr
-				route = route[1:]
-				transversingResource.RouteToDest = route
-
-				// then remove
-				(*t).TransversingResourceToHQ = append((*t).TransversingResourceToHQ[:0], (*t).TransversingResourceToHQ[1:]...)
-
-				visited[(*t).Name] = true
-
-			} else {
-
-				// shift the array to the left to remove current terr
-				route = route[1:]
-				transversingResource.RouteToDest = route
-
-				// copy the transversing resource to the next territory
-				(*(*territories)[route[1]]).TransversingResourceToHQ = append((*(*territories)[route[1]]).TransversingResourceToHQ, transversingResource)
-
-				// remove the current transversing resource
-				(*t).TransversingResourceToHQ = (*t).TransversingResourceToHQ[1:]
-
-				visited[(*t).Name] = true
-
-			}
-		}
-
-	}
 }
 
 func GetPathToHQCheapest(territories *map[string]*table.Territory, HQ string) {
@@ -1131,7 +992,7 @@ func GetPathToHQCheapest(territories *map[string]*table.Territory, HQ string) {
 		// Add logic to compute the shortest path to HQ using Dijkstra's algorithm
 		// add current node
 		if vertexAdded[(*territories)[name].ID] {
-			log.Println("Vertex ID:", (*territories)[name].ID, "already added")
+			cl.Warn("Vertex ID :", (*territories)[name].ID, "already added")
 			continue
 		} else {
 			graph.AddVertex((*territories)[name].ID)
@@ -1154,7 +1015,7 @@ func GetPathToHQCheapest(territories *map[string]*table.Territory, HQ string) {
 			var distance = float64((*territories)[route].Property.Tax.Others)
 			var err = graph.AddArc(currTerr, currConn, int64(distance))
 			if err != nil {
-				log.Println(err)
+				cl.Error("Error adding arc :", err)
 			}
 
 		}
@@ -1169,7 +1030,7 @@ func GetPathToHQCheapest(territories *map[string]*table.Territory, HQ string) {
 		var terrID = territory.ID
 		var pathToHQRaw, err = graph.ShortestSafe(terrID, HQID)
 		if err != nil {
-			log.Println(err)
+			cl.Error("Error getting shortest path to HQ :", err)
 		}
 
 		// Assign path to HQ to the territory
@@ -1215,7 +1076,7 @@ func GetPathToHQFastest(t *map[string]*table.Territory, HQ string) {
 		// Add logic to compute the shortest path to HQ using Dijkstra's algorithm
 		// add current node
 		if vertexAdded[(*t)[name].ID] {
-			log.Println("Vertex ID:", (*t)[name].ID, "already added")
+			cl.Warn("Vertex ID :", (*t)[name].ID, "already added")
 			continue
 		} else {
 			graph.AddVertex((*t)[name].ID)
@@ -1237,13 +1098,13 @@ func GetPathToHQFastest(t *map[string]*table.Territory, HQ string) {
 			// distance is always 1
 			var err = graph.AddArc(currTerr, currConn, 1)
 			if err != nil {
-				log.Println(err)
+				cl.Error("Error adding arc :", err)
 			}
 
 		}
 	}
 
-	log.Println(HQID)
+	cl.Debug("HQID :", HQID)
 
 	// get terr id
 	for _, territory := range *t {
@@ -1256,7 +1117,7 @@ func GetPathToHQFastest(t *map[string]*table.Territory, HQ string) {
 		var pathToHQRaw, err = graph.ShortestSafe(terrID, HQID)
 
 		if err != nil {
-			log.Println(err)
+			cl.Error("Error getting shortest path :", err)
 		}
 
 		// assign path to hq to the territory
@@ -1368,13 +1229,12 @@ func CalculateTerritoryLevel(territories *map[string]*table.Territory) {
 		}
 
 		if terrDef > 0 {
-			log.Println(td.Damage, td.Attack, td.Health, td.Defence, (territory.Level), terrDef, (*territory).Name)
+			// cl.Debug("Territory level :", (*territory).Level, "Territory name:", (*territory).Name, "Territory ID:", (*territory).ID, "Territory def:", terrDef)
 		}
 
 	}
 }
 
-/*
 func checkForUpdate() {
 
 	// check for new version of eco-engine from github then verify the checksum
@@ -1385,18 +1245,17 @@ func checkForUpdate() {
 	var hasher = sha256.New()
 	var f, err = os.Open("./eco-engine")
 	if err != nil {
-		log.Println("Unable to check for updates:", err)
+		cl.Log("Unable to check for updates:", err)
 		return
 	}
 	defer f.Close()
 
 	if _, err := io.Copy(hasher, f); err != nil {
-		log.Println("Unable to check for updates:", err)
+		cl.Log("Unable to check for updates:", err)
 		return
 	}
 
-	var currentChecksum = hex.EncodeToString(hasher.Sum(nil))
-
+	//	var currentChecksum = hex.EncodeToString(hasher.Sum(nil))
+	//	var remoteChecksum string
 
 }
-*/
