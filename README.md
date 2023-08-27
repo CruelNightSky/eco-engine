@@ -11,7 +11,7 @@ The project is written in Go (Golang), providing a powerful and efficient implem
 - Territory upgrades and bonuses
 - Load and unload any territory on the fly
 - Fast forward feature (Not yet implemented)
-- Embeddable using FFI (Not yet implemented)
+- Embeddable using FFI
 - Or communicate over WebSocket or HTTP
 
 ## Usage
