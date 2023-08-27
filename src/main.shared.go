@@ -15,10 +15,6 @@ import (
 	"github.com/gookit/goutil/arrutil"
 )
 
-const (
-	VERSION = "0.0.1a"
-)
-
 var (
 	t                 map[string]*table.Territory // loaded
 	loadedTerritories = make(map[string]*table.Territory)
@@ -913,8 +909,6 @@ func Run() {
 
 //export GetState
 func GetState() *C.char {
-
-	// have to return C compatible data
 	var bytes, _ = json.Marshal(t)
 	var data = C.CString(string(bytes))
 
