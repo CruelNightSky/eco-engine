@@ -75,7 +75,7 @@ Make sure you have Golang >= 1.18 installed
 1. Clone the repository:
 
 ```shell
-git clone https://github.com/CruelNightSky/eco-engine.git
+git clone https://github.com/xsrt-se/eco-engine.git
 ```
 
 2. Change to the project directory:
