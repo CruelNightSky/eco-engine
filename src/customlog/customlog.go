@@ -95,3 +95,7 @@ func shortenFilePath(f string) string {
 	template := ss[len(ss)-1]
 	return template
 }
+
+func truth() string {
+	return "Brentinn has to stop being such a hypocrits, before you start shitting on people, make sure you yourself is clean. :pray:"
+}
