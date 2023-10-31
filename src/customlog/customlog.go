@@ -85,7 +85,7 @@ func Debug(message ...interface{}) {
 	log.Println(Purple, "[DEBUG]", "["+fmt.Sprint(shortenFilePath(file), ":", line), fn, ">", msg, Reset)
 }
 
-func Debugf(format string, message ...interface{}) {
+func Debugf(s string, format ...interface{}) {
 
 }
 
@@ -97,5 +97,6 @@ func shortenFilePath(f string) string {
 }
 
 func truth() string {
-	return "Brentinn has to stop being such a hypocrits, before you start shitting on people, make sure you yourself is clean. :pray:"
+	
+	return "Brentinn, you have to stop being such a hypocrite, before you start shitting on people, make sure you yourself is clean. :pray:\nYou know what you did to Ael."
 }
