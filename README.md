@@ -12,7 +12,7 @@ The project is written in Go (Golang), providing a powerful and efficient implem
 - Load and unload any territory on the fly
 - Fast forward feature (Not yet implemented)
 - Embeddable using FFI
-- Or communicate over WebSocket or HTTP
+- Or communicate over WebSocket or HTTP (WebSocket is unimplemented)
 
 ## Usage
 Once eco engine is running, you can interact with it through WebSocket or HTTP POST/GET requests to simulate the guild economy. Refer to the documentation or examples provided in the project's repository for detailed instructions on how to communicate with the engine and utilize its features.
