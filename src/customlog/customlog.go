@@ -1,7 +1,5 @@
 package customlog
 
-import "C"
-
 import (
 	"fmt"
 	"log"
@@ -35,8 +33,6 @@ var Black = "\033[90m"
 
 // red bg with llight grey text
 var RedBgWLgtGrey = "\033[101;37m"
-
-func main() {}
 
 func SetDebug(d bool) {
 	debug = d

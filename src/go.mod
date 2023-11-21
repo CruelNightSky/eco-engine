@@ -4,8 +4,6 @@ go 1.18
 
 require github.com/RyanCarrier/dijkstra v1.3.0
 
-require fyne.io/fyne/v2 v2.4.1 // indirect
-
 require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/gookit/goutil v0.6.10
