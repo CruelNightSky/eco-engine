@@ -1,11 +1,15 @@
 package customlog
 
+import "C"
+
 import (
 	"fmt"
 	"log"
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 var debug = false
@@ -32,6 +36,8 @@ var Black = "\033[90m"
 // red bg with llight grey text
 var RedBgWLgtGrey = "\033[101;37m"
 
+func main() {}
+
 func SetDebug(d bool) {
 	debug = d
 }
@@ -41,7 +47,7 @@ func Log(message ...interface{}) {
 	var fn = runtime.FuncForPC(pc).Name() + "]"
 	var msg = ""
 	for _, v := range message {
-		msg += fmt.Sprintf("%+v ", v)
+		msg += fmt.Sprintf("%#v ", v)
 	}
 	fmt.Print(Cyan)
 	log.Println(Cyan, "[INFO]", "["+fmt.Sprint(shortenFilePath(file), ":", line), fn, ">", msg, Reset)
@@ -85,8 +91,12 @@ func Debug(message ...interface{}) {
 	log.Println(Purple, "[DEBUG]", "["+fmt.Sprint(shortenFilePath(file), ":", line), fn, ">", msg, Reset)
 }
 
-func Debugf(s string, format ...interface{}) {
+func Debugf(format string, message ...interface{}) {
 
+}
+
+func LogStruct(s interface{}) {
+	spew.Dump(s)
 }
 
 func shortenFilePath(f string) string {
@@ -94,9 +104,4 @@ func shortenFilePath(f string) string {
 	// get last element
 	template := ss[len(ss)-1]
 	return template
-}
-
-func truth() string {
-	
-	return "Brentinn, you have to stop being such a hypocrite, before you start shitting on people, make sure you yourself is clean. :pray:\nYou know what you did to Ael."
 }
