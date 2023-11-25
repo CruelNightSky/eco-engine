@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	cl "eco-engine/customlog"
 	"eco-engine/table"
 	"encoding/json"
@@ -23,12 +25,72 @@ const (
 
 var (
 	startTime         = time.Now()
-	t                 map[string]*table.Territory // loaded
-	loadedTerritories = make(map[string]*table.Territory)
+	t                 map[string]*table.Territory         // Map of all territories including unclaimed ones.
+	loadedTerritories = make(map[string]*table.Territory) // Map of all claimed or allied territories.
 	upgrades          *table.CostTable
 	initialised       = false
 	hq                string
-	fourByEleven      = &table.TerritoryUpdateData{
+	halted            = false
+	stepping          = false
+	counter           = 0
+)
+
+var (
+	Undefend = &table.TerritoryUpdateData{
+		Property: table.TerritoryProperty{
+			TargetUpgrades: table.TerritoryPropertyUpgradeData{
+				Damage:  0,
+				Attack:  0,
+				Health:  0,
+				Defence: 0,
+			},
+			TargetBonuses: table.TerritoryPropertyBonusesData{
+				StrongerMinions:       0,
+				TowerMultiAttack:      0,
+				TowerAura:             0,
+				TowerVolley:           0,
+				LargerResourceStorage: 0,
+				LargerEmeraldStorage:  0,
+				EfficientResource:     0,
+				EfficientEmerald:      0,
+			},
+			Tax: table.Tax{
+				Ally:   5,
+				Others: 5,
+			},
+			Border:       "Open",
+			TradingStyle: "Cheapest",
+		},
+	}
+
+	StandardMedium = &table.TerritoryUpdateData{
+		Property: table.TerritoryProperty{
+			TargetUpgrades: table.TerritoryPropertyUpgradeData{
+				Damage:  4,
+				Attack:  4,
+				Health:  4,
+				Defence: 4,
+			},
+			TargetBonuses: table.TerritoryPropertyBonusesData{
+				StrongerMinions:       2,
+				TowerMultiAttack:      0,
+				TowerAura:             1,
+				TowerVolley:           1,
+				LargerResourceStorage: 0,
+				LargerEmeraldStorage:  0,
+				EfficientResource:     0,
+				EfficientEmerald:      0,
+				ResourceRate:          0,
+				EmeraldRate:           0,
+			},
+			Tax: table.Tax{
+				Ally:   5,
+				Others: 60,
+			},
+		},
+	}
+
+	Eleven = &table.TerritoryUpdateData{
 		Property: table.TerritoryProperty{
 			TargetUpgrades: table.TerritoryPropertyUpgradeData{
 				Damage:  6,
@@ -54,7 +116,7 @@ var (
 			},
 			Border:       "Open",
 			TradingStyle: "Cheapest",
-		HQ:           false,
+			HQ:           false,
 		},
 	}
 )
@@ -108,10 +170,10 @@ func init() {
 			},
 			Property: table.TerritoryProperty{
 				TargetUpgrades: table.TerritoryPropertyUpgradeData{
-					Damage:  11,
-					Attack:  11,
-					Health:  11,
-					Defence: 11,
+					Damage:  0,
+					Attack:  0,
+					Health:  0,
+					Defence: 0,
 				},
 				TargetBonuses: table.TerritoryPropertyBonusesData{
 					StrongerMinions:       0,
@@ -201,10 +263,6 @@ func main() {
 		port = os.Args[1]
 		cl.Log("Using port", port)
 	}
-
-	// if port == "" {
-	//	log.Panicln("$PORT must be set")
-	// }
 
 	// start http server
 	cl.Log("Starting HTTP server.")
@@ -304,22 +362,56 @@ func main() {
 			Crop:    120000.0,
 		}
 
-		/*
-			t["Ahmsord"].Set(table.TerritoryUpdateData{
-				Property: table.TerritoryProperty{
-					TargetUpgrades: table.TerritoryPropertyUpgradeData{
-						Damage:  6,
-						Attack:  6,
-						Defence: 6,
-						Health:  6,
-					},
-				},
-			})
-
-			t["Central Islands"].SetHQ()
-		*/
-
 		startTimer2(&t, hq)
+	})
+
+	http.HandleFunc("/movehq", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Header().Add("Content-Type", "application/json")
+			w.Write([]byte(`{"code":405,"error":"method not allowed"}`))
+			return
+		}
+
+		if !initialised {
+			w.WriteHeader(http.StatusForbidden)
+			w.Header().Add("Content-Type", "application/json")
+			w.Write([]byte(`{"code":403,"error":"not initialised"}`))
+			return
+		}
+
+		var moveHQData struct {
+			NewLocation string `json:"newLocation"`
+		}
+
+		var bytes, err = io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":400,"message":"invalid json"}`))
+			return
+		}
+
+		// check if new location is valid
+		keys := make([]string, 0, len(t))
+		for k := range t {
+			keys = append(keys, k)
+		}
+		
+		if !arrutil.Contains(keys, moveHQData.NewLocation) {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":400,"message":"invalid hq location"}`))
+			return
+		}
+
+		err = json.Unmarshal(bytes, &moveHQData)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":400,"message":"invalid json"}`))
+			return
+		}
+
+		// move the hq
+		MoveHQ(&t, moveHQData.NewLocation)
 	})
 
 	http.HandleFunc("/modifyTerritory", func(w http.ResponseWriter, r *http.Request) {
@@ -471,7 +563,7 @@ func main() {
 		}
 
 		var data struct {
-			Territory string                    `json:"territory"`
+			Territory  string                    `json:"territory"`
 			UpdateData table.TerritoryUpdateData `json:"updateData"`
 		}
 
@@ -491,6 +583,48 @@ func main() {
 		w.Write(resData)
 	})
 
+	http.HandleFunc("/halt", func(w http.ResponseWriter, r *http.Request) {
+		if halted {
+			halted = false
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"code":200,"message":"resumed."}`))
+		} else {
+			halted = true
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"code":200,"message":"halted."}`))
+		}
+	})
+
+	http.HandleFunc("/step", func(w http.ResponseWriter, r *http.Request) {
+		if !halted {
+			w.WriteHeader(http.StatusForbidden)
+			w.Write([]byte(`{"code":403,"message":"cannot step through while eco engine is running."}`))
+		} else {
+			StepThrough()
+			w.WriteHeader(http.StatusOK)
+			var data = []byte(`{"code":200,"message":"stepping through.","state":`)
+			var data2, _ = json.Marshal(t)
+			var end = []byte(`}`)
+
+			data = append(data, data2...)
+			data = append(data, end...)
+
+			w.Write(data)
+		}
+	})
+
+	http.HandleFunc("/state", func(w http.ResponseWriter, r *http.Request) {
+		if !initialised {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"code":400,"message":"not initialised"}`))
+			return
+		}
+
+		var data, _ = json.Marshal(t)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"code":200,"message":"","data":` + string(data) + `}` + "simulationTime:" + time.Since(startTime).String()))
+	})
+
 	err := http.ListenAndServe(":"+port, nil)
 	if err != nil {
 		cl.Error("Error starting server : ", err.Error())
@@ -499,14 +633,14 @@ func main() {
 }
 
 func startTimer2(t *map[string]*table.Territory, HQ string) {
-	// Use a channel to receive ticks every second
-	ticker := time.Tick(time.Second)
-
 	// Run the loop in a goroutine
 	go func(t *map[string]*table.Territory, HQ string) {
-		// log.Println("New goroutine started")
-		var counter = 0
-		for range ticker {
+
+		for {
+			var startTime = time.Now()
+			if halted {
+				break
+			}
 			GenerateResorce(t)
 			CalculateTowerStats(t, HQ)
 			CalculateTerritoryUsageCost(t)
@@ -517,43 +651,20 @@ func startTimer2(t *map[string]*table.Territory, HQ string) {
 			cl.Debug("Tick", counter)
 			cl.Debug("HQ", (*t)[HQ].Property, (*t)[HQ].Storage.Current)
 			cl.Debug("Ahmsord", (*t)["Ahmsord"].TerritoryUsage, (*t)["Ahmsord"].Storage.Current)
-
 			// every 60s
-			if counter%5 == 0 {
+			if counter%60 == 0 {
 				ResourceTick(t, HQ)
 				QueueHQResource(t)
-				QueueResource(t)
 				cl.Debug("Tock")
 				counter = 0
 			}
-		}
-	}(t, HQ)
-}
+			var endTime = time.Now()
 
-func startTimer(t *map[string]*table.Territory, HQ string) {
+			var duration = endTime.Sub(startTime)
+			var sleepTime = time.Second - duration
 
-	// run generateResource every 1s and resTick every 60s using goroutine
-	go func(t *map[string]*table.Territory, HQ string) {
-		// log.Println("New goroutine started")
-		var counter = 0
-		for {
-			time.Sleep(time.Second * 1)
-			GenerateResorce(t)
-			CalculateTowerStats(t, HQ)
-			CalculateTerritoryUsageCost(t)
-			CalculateTerritoryLevel(t)
-			SetStorageCapacity(t)
-
-			counter++
-			cl.Debug("Tick", counter)
-			cl.Debug("HQ", (*t)[HQ].Property, (*t)[HQ].Storage.Current)
-			cl.Debug("Ahmsord", (*t)["Ahmsord"].TerritoryUsage, (*t)["Ahmsord"].Storage.Current)
-			// every 60s
-			if counter%5 == 0 {
-				ResourceTick(t, HQ)
-				QueueHQResource(t)
-				cl.Debug("Tock")
-				counter = 0
+			if sleepTime > 0 {
+				time.Sleep(sleepTime)
 			}
 		}
 	}(t, HQ)
@@ -1134,7 +1245,7 @@ func ResourceTick(territories *map[string]*table.Territory, HQ string) {
 			spew.Dump("Current territory :", (*territory).Name, "Traversing resource :", (*territory).TraversingResourceToHQ)
 			for _, resource := range (*territory).TraversingResourceToHQ {
 				// RouteToDest[0] is the next territory
-				cl.Log("Resource Route for territory : ", territory.Name ,resource.RouteToDest)
+				cl.Log("Resource Route for territory : ", territory.Name, resource.RouteToDest)
 				var nextTerritory = (*territories)[resource.RouteToDest[0]]
 
 				// if next territory is the destination then add the resource to the storage
@@ -1440,4 +1551,142 @@ func CalculateTerritoryLevel(territories *map[string]*table.Territory) {
 			cl.Log("An error has occured while calculating territory level for : ", (*territory).Name, " with def : ", terrDef)
 		}
 	}
+}
+
+func MoveHQ(territories *map[string]*table.Territory, new string) {
+	halted = true
+	// find old hq to unset hq, then set new hq
+	for _, territory := range *territories {
+		if territory.Name == hq {
+			t[hq].UnsetHQ()
+		}
+		if territory.Name == new {
+			t[new].SetHQ()
+		}
+	}
+
+	hq = new
+
+	GetPathToHQCheapest(&t, hq)
+
+	halted = false
+}
+
+func HaltEngine() {
+	// halt the engine
+	cl.Warn("Halting engine.")
+	halted = true
+}
+
+func ResumeEngine() {
+	cl.Warn("Resuming engine.")
+	halted = false
+}
+
+func StepThrough() {
+	if stepping {
+		cl.Warn("Step through unavailable while stepping.")
+		return
+	}
+
+	stepping = true
+	cl.Warn("Stepping through. tick :", counter)
+	GenerateResorce(&t)
+	CalculateTowerStats(&t, hq)
+	CalculateTerritoryUsageCost(&t)
+	CalculateTerritoryLevel(&t)
+	SetStorageCapacity(&t)
+
+	counter++
+	cl.Debug("Tick", counter)
+	cl.Debug("HQ", (t)[hq].Property, (t)[hq].Storage.Current)
+	cl.Debug("Ahmsord", (t)["Ahmsord"].TerritoryUsage, (t)["Ahmsord"].Storage.Current)
+	// every 60s
+	if counter%60 == 0 {
+		ResourceTick(&t, hq)
+		QueueHQResource(&t)
+		cl.Debug("Tock")
+		counter = 0
+	}
+
+	stepping = false
+}
+
+func LoadState(data []byte) {
+
+	if initialised {
+		cl.Warn("Engine already initialised.")
+		return
+	}
+
+	// decompress the data
+	var decompressed, err = decompress(data)
+	if err != nil {
+		cl.Warn("Error decompressing data :", err)
+		return
+	}
+
+	// unmarshal the data
+	err = json.Unmarshal(decompressed, &t)
+	if err != nil {
+		cl.Warn("Error deserialising data :", err)
+		return
+	}
+
+	// Find HQ
+	for _, territory := range t {
+		if territory.Property.HQ {
+			hq = territory.Name
+			break
+		}
+
+		startTimer2(&t, hq)
+	}
+}
+
+func SaveState() ([]byte, error) {
+	if !halted {
+		HaltEngine()
+		defer ResumeEngine()
+	}
+
+	var err error
+	var data []byte
+	d, _ := json.Marshal(t)
+
+	data, err = compress(d)
+
+	return data, err
+}
+
+func compress(input []byte) ([]byte, error) {
+	var buffer bytes.Buffer
+	writer := gzip.NewWriter(&buffer)
+
+	_, err := writer.Write(input)
+	if err != nil {
+		return nil, err
+	}
+
+	err = writer.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return buffer.Bytes(), nil
+}
+
+func decompress(input []byte) ([]byte, error) {
+	reader, err := gzip.NewReader(bytes.NewReader(input))
+	if err != nil {
+		return nil, err
+	}
+
+	var buffer bytes.Buffer
+	_, err = buffer.ReadFrom(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	return buffer.Bytes(), nil
 }
